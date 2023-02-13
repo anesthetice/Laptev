@@ -4,4 +4,7 @@
 /training
 /archives
 /benchmarking
+lbpcascade_frontalface.xml
 lbpcascade_frontalface_improved.xml
+haarcascade_frontalface_default.xml
+output*
