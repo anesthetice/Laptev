@@ -34,7 +34,7 @@ pub fn find_all_faces(image_filepath : &str, classifier_filepath : Option<&str>,
     let max_size : Size = Size::new(0, 0);
 
     if verbose {
-        println!("running the facial detection with the following settings :\n   *scale_factor : {}\n   *min_neighbours : {}\n   *flags : {}\n   *min_size : {}\n   *max_size : {}",
+        println!("running facial detection with the following settings :\n   * scale_factor : {}\n   * min_neighbours : {}\n   * flags : {}\n   * min_size : {}\n   * max_size : {}",
             scale_factor, min_neighbours, flags, min_size.area(), max_size.area()
         );
     }
@@ -76,7 +76,7 @@ pub fn draw_rectangle(image_filepath : &str, output_filepath : &str, faces : &Ve
 fn calculate_appropriate_rect_thickness(area : i32) -> i32 {
     let area : f64 = f64::from(area);
     let side : f64 = area.sqrt();
-    let mut divided_side : f64 = side / 50.0;
+    let mut divided_side : f64 = side / 45.0;
     divided_side = divided_side.ceil();
     return divided_side as i32;
 }
