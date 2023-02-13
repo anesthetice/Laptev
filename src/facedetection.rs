@@ -1,11 +1,8 @@
+// facedetection module
 
-
-use std::time::{Instant, Duration};
-use opencv::core::{Mat, Vector, Rect, Size, Scalar};
-use opencv::gapi::sqrt;
-use opencv::imgproc::{cvt_color, COLOR_BGR2RGB, rectangle, LINE_8};
+use opencv::core::{Vector, Rect, Size, Scalar};
+use opencv::imgproc::{rectangle, LINE_8};
 use opencv::imgcodecs::{imread, imwrite, IMREAD_GRAYSCALE, IMREAD_COLOR};
-use opencv::highgui::{imshow, wait_key, destroy_all_windows};
 use opencv::objdetect::CascadeClassifier;
 use opencv::prelude::CascadeClassifierTrait;
 
