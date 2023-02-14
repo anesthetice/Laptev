@@ -10,7 +10,7 @@ const LBP_CLASSIFIER_FILEPATH : &'static str = "lbpcascade_frontalface_improved.
 
 pub struct DCMparams {
     scale_factor : f64,
-    min_neighbours : i32,
+    min_neighbors : i32,
     flags : i32,
     min_size : Size,
     max_size  : Size,
@@ -21,17 +21,17 @@ impl DCMparams {
         // size is (width, height)
         return DCMparams {
             scale_factor : scale_factor,
-            min_neighbours : min_neihbours,
+            min_neighbors : min_neihbours,
             flags : flags,
             min_size : Size::new(min_size.0, min_size.1),
             max_size : Size::new(max_size.0, max_size.1)
         }
     }
-    pub fn default() -> DCMparams {
+    fn default() -> DCMparams {
         // mostly trial and error to find this, subject to change
         return DCMparams {
             scale_factor : 1.25,
-            min_neighbours : 5,
+            min_neighbors : 5,
             flags : 0,
             min_size : Size::new(0, 0),
             max_size : Size::new(0, 0)
@@ -63,12 +63,12 @@ pub fn find_all_faces(image_filepath : &str, classifier_filepath : Option<&str>,
     let mut faces_detected : Vector<Rect> = Vector::new();
 
     if verbose {
-        println!("running facial detection with the following settings :\n   * scale_factor : {}\n   * min_neighbours : {}\n   * flags : {}\n   * min_size : {}\n   * max_size : {}",
-            params.scale_factor, params.min_neighbours, params.flags, params.min_size.area(), params.max_size.area()
+        println!("running facial detection with the following settings :\n   * scale_factor : {}\n   * min_neighbors : {}\n   * flags : {}\n   * min_size : {}\n   * max_size : {}",
+            params.scale_factor, params.min_neighbors, params.flags, params.min_size.area(), params.max_size.area()
         );
     }
 
-    match cascade_detector.detect_multi_scale(&greyscaled_face_image, &mut faces_detected, params.scale_factor, params.min_neighbours, params.flags, params.min_size, params.max_size) {
+    match cascade_detector.detect_multi_scale(&greyscaled_face_image, &mut faces_detected, params.scale_factor, params.min_neighbors, params.flags, params.min_size, params.max_size) {
         Ok(_) => (),
         Err(_) => return Err(()),
     }
