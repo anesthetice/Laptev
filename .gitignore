@@ -1,11 +1,2 @@
-/target
-/design
-/testing
-/training
+*/target
 /archives
-/benchmarking
-lbpcascade_frontalface.xml
-lbpcascade*
-haarcascade*
-output*
-/motion
