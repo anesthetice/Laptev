@@ -33,7 +33,6 @@ use lazy_static::{
 };
 use std::{
     io,
-    sync::Mutex,
 };
 
 mod configuration;
@@ -48,8 +47,7 @@ lazy_static! {
 #[tokio::main]
 async fn main() -> io::Result<()> {
     ls_initialize(&CLIENT_PRIVATE_KEY);
-    let address = "192.168.1.163:34567";
-    let mut stream: TcpStream = TcpStream::connect(address).await?;
+    let mut stream: TcpStream = TcpStream::connect("192.168.1.163:52382").await?;
     let mut rng: ThreadRng = thread_rng();
     // authentication using RSA
     {

@@ -1,3 +1,5 @@
+pub const DEFAULT_PORT: usize = 52382;
+pub const DEFAULT_ADDRESS: &'static str = "0.0.0.0";
 pub const CLIENT_PUBLIC_KEY_PEM: &'static str = "-----BEGIN PUBLIC KEY-----
 MIICIjANBgkqhkiG9w0BAQEFAAOCAg8AMIICCgKCAgEA9GoPf58iWB1hA3kkCs0b
 oNjE395iEcWhYq+0iOFXDfzrVfg2B+5hYHOW6dGwSZoT4jMYogGrDQ9HlU1xVf1G

@@ -6,10 +6,7 @@ use rsa::{
     RsaPublicKey,
     Pkcs1v15Encrypt,
     PublicKey,
-    pkcs8::{
-        DecodePrivateKey,
-        DecodePublicKey,
-    },
+    pkcs8::DecodePublicKey,
 };
 use aes_gcm_siv::{
     Aes256GcmSiv,
@@ -17,18 +14,9 @@ use aes_gcm_siv::{
     KeyInit
 };
 use tokio::{
-    net::{
-        TcpStream,
-        TcpListener,
-    },
-    io::{
-        AsyncWriteExt,
-        AsyncReadExt,
-    },
-    time::{
-        sleep,
-        Duration,
-    },
+    net::{TcpStream,TcpListener},
+    io::{AsyncWriteExt,AsyncReadExt},
+    time::{sleep,Duration},
 };
 use rand::{
     rngs::StdRng,
@@ -40,17 +28,39 @@ use lazy_static::{
     initialize as ls_initialize,
 };
 use std::{
-    io,
+    io::{self, BufWriter, Write, stdout},
     sync::RwLock,
+    sync::Mutex,
+    fs::{File,OpenOptions}, net::{SocketAddr, SocketAddrV4, Ipv4Addr},
 };
 
 mod configuration;
 use configuration::{
     CLIENT_PUBLIC_KEY_PEM,
+    DEFAULT_ADDRESS,
+    DEFAULT_PORT,
 };
 
 lazy_static! {
-    pub static ref CLIENT_PUBLIC_KEY:RwLock<RsaPublicKey> = RwLock::new(RsaPublicKey::from_public_key_pem(&CLIENT_PUBLIC_KEY_PEM).unwrap());
+    static ref CLIENT_PUBLIC_KEY:RwLock<RsaPublicKey> = RwLock::new(RsaPublicKey::from_public_key_pem(&CLIENT_PUBLIC_KEY_PEM).unwrap());
+
+    static ref LOG_FILE: Mutex<BufWriter<File>> = {
+        let file = OpenOptions::new().create(true).append(true).open("laptev-host.log").unwrap();
+        Mutex::new(BufWriter::new(file))
+    };
+}
+
+macro_rules! simple_log {
+    ($($args:tt)*) => {
+        println!($($args)*);
+        match LOG_FILE.lock() {
+            Ok(mut file) => {
+                writeln!(file, $($args)*);
+                file.flush();
+            }
+            Err(error) => eprintln!("[WARNING] {}", error),
+        }
+    }
 }
 
 fn encrypt_with_cpk(data: &[u8], rng: &mut StdRng) -> io::Result<Vec<u8>> {
@@ -89,6 +99,26 @@ fn http_server() {
     }
 }
 
+async fn tcp_listener(address: &str, port: usize) {
+    loop {
+        let listener : TcpListener = match TcpListener::bind(&format!("{}:{}", address, port)).await {
+            Ok(listener) => listener,
+            Err(..) => {
+                sleep(Duration::from_secs(5)).await;
+                continue;
+            }
+        };
+        loop {
+            let (stream, addr) =  match listener.accept().await {
+                Ok(tuple) => tuple,
+                Err(..) => continue,
+            };
+            simple_log!("[INFO] receiving a connection from : {}", addr);
+            tokio::spawn(async move {handle_client(stream).await.unwrap();});
+        }
+    }
+}
+
 async fn handle_client(mut stream: TcpStream) -> io::Result<()> {
     let mut rng: StdRng = StdRng::from_entropy();
     // authentication using RSA
@@ -113,6 +143,7 @@ async fn handle_client(mut stream: TcpStream) -> io::Result<()> {
         stream.write(&encrypt_with_cpk(&key, &mut rng)?).await?;
         Aes256GcmSiv::new(&key)
     };
+    simple_log!("[INFO] connection secured with : {:?}", stream.peer_addr().unwrap_or(SocketAddr::from(SocketAddrV4::new(Ipv4Addr::new(0, 0, 0, 0), 0))));
     
     // always create a new different nonce and send it alongside your message
     let nonce = {
@@ -122,28 +153,17 @@ async fn handle_client(mut stream: TcpStream) -> io::Result<()> {
 
     // message structure
     // repeat-byte (0 or 1), 12-bytes nonce, 16*x bytes message (AES compability)
-    println!("connection secured");
+    
     return Ok(());
 }
 
 #[tokio::main]
-async fn main() -> io::Result<()> {
+async fn main() {
     ls_initialize(&CLIENT_PUBLIC_KEY);
+    ls_initialize(&LOG_FILE);
+    simple_log!("\n\n[INFO] start of a new Laptev instance");
+    tokio::spawn(async move {tcp_listener(DEFAULT_ADDRESS, DEFAULT_PORT).await});
     loop {
-        let listener : TcpListener = match TcpListener::bind(&format!("{}:{}", "0.0.0.0", 34567)).await {
-            Ok(listener) => listener,
-            Err(..) => {
-                sleep(Duration::from_secs(5)).await;
-                continue;
-            }
-        };
-        loop {
-            let (stream, addr) =  match listener.accept().await {
-                Ok(tuple) => tuple,
-                Err(..) => continue,
-            };
-            println!("[INFO] receiving a connection from : {}", addr);
-            tokio::spawn(async move {handle_client(stream).await.unwrap();});
-        }
+
     }
 }
