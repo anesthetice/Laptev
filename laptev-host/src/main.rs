@@ -108,6 +108,7 @@ async fn tcp_listener(address: &str, port: usize) {
                 continue;
             }
         };
+        simple_log!("[INFO] listener bound to port {}", port);
         loop {
             let (stream, addr) =  match listener.accept().await {
                 Ok(tuple) => tuple,

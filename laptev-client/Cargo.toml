@@ -6,6 +6,8 @@ author = "anesthetice"
 
 [dependencies]
 lazy_static = "1.4.*"
+iced = {version="0.9.*", features=["image", "tokio"]}
+serde = { version = "1.0.160", features = ["derive"] }
 
 # networking
 reqwest = {version="0.11.*", features=["blocking"]} 
@@ -15,3 +17,4 @@ tokio = { version = "1.27.*", features = ["full"] }
 rsa = {version = "0.8.2", features=["pem"]}
 aes-gcm-siv = "0.11.1"
 rand = "0.8.5"
+iced_futures = { version = "0.6.0", features = ["tokio"] }
