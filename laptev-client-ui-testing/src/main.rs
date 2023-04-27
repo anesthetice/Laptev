@@ -1,6 +1,15 @@
-use iced::widget::{button, column, TextInput, text_input, Column};
-use iced::{executor, Application, Executor, Theme, Command, Element, Settings};
-
+use iced::{
+    widget::{button, column, text_input, text, image},
+    alignment,
+    executor,
+    Application,
+    Theme,
+    Command,
+    Element,
+    Settings,
+    window,
+    Length,
+};
 
 struct Custom {
     address: String,
@@ -46,9 +55,21 @@ impl Application for Custom {
 
     fn view(&self) -> Element<Self::Message> {
         column![
-            text_input("address", self.address.as_str()).on_input(Message::InputChanged),
-            button("connect").on_press(Message::Connect),
-        ].into()
+            image("W:/Warehouse/Laptev/laptev-client-ui-testing/res/icon.png")
+                .width(175)
+                .height(175),
+            text_input("address:port", self.address.as_str())
+                .on_input(Message::InputChanged)
+                .padding([10, 5]),
+            button(text("connect").horizontal_alignment(alignment::Horizontal::Center))
+                .on_press(Message::Connect)
+                .padding(5)
+                .width(75)
+        ]
+        .align_items(alignment::Alignment::Center)
+        .padding(20)
+        .spacing(10)
+        .into()
     }
 
 }
@@ -60,5 +81,15 @@ pub enum Message {
 }
 
 fn main() -> iced::Result {
-    Custom::run(Settings::default())
+    println!("{}", format!("{}/res/icon.png", env!("CARGO_MANIFEST_DIR")));
+    let settings: iced::Settings<()> = Settings {
+        window: window::Settings {
+            size: (300, 400),
+            resizable: true,
+            decorations: true,
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    Custom::run(settings)
 }
