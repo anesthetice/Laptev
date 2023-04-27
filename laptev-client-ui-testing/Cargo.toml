@@ -1,0 +1,8 @@
+[package]
+name = "laptev-client-ui-testing"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+iced = "0.9.*"
+serde = { version = "1.0.160", features = ["derive"] }
