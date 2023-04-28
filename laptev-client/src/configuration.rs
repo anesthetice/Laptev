@@ -1,3 +1,4 @@
+pub const ADDRESS: &'static str = "192.168.1.163:34567";
 pub const CLIENT_PRIVATE_KEY_PEM: &'static str = "-----BEGIN PRIVATE KEY-----
 MIIJQgIBADANBgkqhkiG9w0BAQEFAASCCSwwggkoAgEAAoICAQD0ag9/nyJYHWED
 eSQKzRug2MTf3mIRxaFir7SI4VcN/OtV+DYH7mFgc5bp0bBJmhPiMxiiAasND0eV
