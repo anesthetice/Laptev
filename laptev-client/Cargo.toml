@@ -18,3 +18,4 @@ rsa = {version = "0.8.2", features=["pem"]}
 aes-gcm-siv = "0.11.1"
 rand = "0.8.5"
 iced_futures = { version = "0.6.0", features = ["tokio"] }
+iced_native = "0.10.3"

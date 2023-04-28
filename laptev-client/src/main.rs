@@ -49,7 +49,7 @@ lazy_static! {
 }
 
 use iced::{
-    widget::{button, column, text_input, text, image, Image},
+    widget::{button, column, text_input, text, image, Image, container},
     alignment,
     Application,
     Theme,
@@ -57,9 +57,12 @@ use iced::{
     Element,
     Settings,
     window::{self, icon},
+    theme::Palette, color,
 };
-
 use iced_futures::backend::native::tokio as tokio_iced;
+use iced_native::command::Action;
+use iced_native::window::Action as WindowAction;
+
 
 pub struct Connection {
     stream: TcpStream,
@@ -117,7 +120,7 @@ struct Laptev {
 }
 
 impl Laptev {
-    pub fn new() -> Self {
+    pub fn default() -> Self {
         return Laptev {
             address: ADDRESS.to_string(),
             mode: Mode::Disconnected,
@@ -133,7 +136,7 @@ impl Application for Laptev {
     type Theme = Theme;
 
     fn new(_flags: ()) -> (Laptev, Command<Self::Message>) {
-        (Laptev::new(), Command::none())
+        (Laptev::default(), Command::none())
     }
 
     fn title(&self) -> String {
@@ -141,7 +144,14 @@ impl Application for Laptev {
     }
     
     fn theme(&self) -> Self::Theme {
-        return Theme::Light;
+        let laptev_palette : Palette = Palette {
+            background: color!(229, 241, 237),
+            text: color!(49, 108, 107),
+            primary: color!(49, 108, 107),
+            success: color!(49, 108, 107),
+            danger: color!(49, 108, 107),
+        };
+        iced::Theme::custom(laptev_palette)
     }
 
     fn update(&mut self, message: Message) -> Command<Self::Message> {
@@ -153,10 +163,16 @@ impl Application for Laptev {
             },
             Message::ConnectionAttempt(attempt) => {
                 match attempt {
-                    Some(connection_arc) => self.mode = Mode::Connected(Arc::try_unwrap(connection_arc).unwrap()),
-                    None => self.mode = Mode::Disconnected,
+                    Some(connection_arc) => {
+                        self.mode = Mode::Connected(Arc::try_unwrap(connection_arc).unwrap());
+                        Command::single(Action::Window(WindowAction::Resize { width: 1280, height: 720 }))
+                    },
+                    None => {
+                        self.mode = Mode::Disconnected;
+                        Command::none()
+                    },
                 }
-                Command::none()
+                
             },
             Message::InputChanged(new_data) => {
                 self.address = new_data.to_string();
@@ -187,14 +203,19 @@ impl Application for Laptev {
                 .into()
             },
             Mode::AttemptingConnection => {
-                column![].into()
+                column![
+                    text("conecting...")
+                        .horizontal_alignment(alignment::Horizontal::Center)
+                ].into()
             }
             Mode::Connected(..) => {
-                column![].into()
+                column![
+                    text("connected")
+                    .horizontal_alignment(alignment::Horizontal::Center)
+                ].into()
             }
         }
     }
-
 }
 
 #[derive(Debug, Clone)]
@@ -208,6 +229,7 @@ pub enum Message {
 async fn main() -> iced::Result {
     ls_initialize(&CLIENT_PRIVATE_KEY);
     ls_initialize(&ICON_FILEPATH);
+
     let settings: iced::Settings<()> = Settings {
         window: window::Settings {
             size: (300, 400),
