@@ -147,9 +147,9 @@ impl Application for Laptev {
         let laptev_palette : Palette = Palette {
             background: color!(229, 241, 237),
             text: color!(49, 108, 107),
-            primary: color!(49, 108, 107),
-            success: color!(49, 108, 107),
-            danger: color!(49, 108, 107),
+            primary: color!(229, 241, 237),
+            success: color!(229, 241, 237),
+            danger: color!(229, 241, 237),
         };
         iced::Theme::custom(laptev_palette)
     }
@@ -178,6 +178,12 @@ impl Application for Laptev {
                 self.address = new_data.to_string();
                 Command::none()
             },
+            Message::Disconnect => {
+                // I think this should drop the entire Connection structure
+                self.mode = Mode::Disconnected;
+                self.recordings.clear();
+                Command::single(Action::Window(WindowAction::Resize { width: 300, height: 400 }))
+            }
         }
     }
 
@@ -195,7 +201,7 @@ impl Application for Laptev {
                     button(text("connect").horizontal_alignment(alignment::Horizontal::Center))
                         .on_press(Message::Connect)
                         .padding(5)
-                        .width(75)
+                        .width(75),
                 ]
                 .align_items(alignment::Alignment::Center)
                 .padding(20)
@@ -204,14 +210,27 @@ impl Application for Laptev {
             },
             Mode::AttemptingConnection => {
                 column![
-                    text("conecting...")
+                    image(format!("{}/res/icon.png", env!("CARGO_MANIFEST_DIR")))
+                        .width(175)
+                        .height(175),
+                    text("conecting")
                         .horizontal_alignment(alignment::Horizontal::Center)
-                ].into()
+                        .vertical_alignment(alignment::Vertical::Center),
+                    text("...")
+                        .horizontal_alignment(alignment::Horizontal::Center)
+                        .vertical_alignment(alignment::Vertical::Center),
+                ]
+                .align_items(alignment::Alignment::Center)
+                .padding([20, 63])
+                .spacing(10)
+                .into()
             }
             Mode::Connected(..) => {
                 column![
-                    text("connected")
-                    .horizontal_alignment(alignment::Horizontal::Center)
+                    button(text("disconnect").horizontal_alignment(alignment::Horizontal::Center))
+                        .on_press(Message::Disconnect)
+                        .padding(5)
+                        .width(100),
                 ].into()
             }
         }
@@ -223,6 +242,7 @@ pub enum Message {
     Connect,
     ConnectionAttempt(Option<Arc<Connection>>),
     InputChanged(String),
+    Disconnect,
 }
 
 #[tokio::main]

@@ -14,9 +14,9 @@ use aes_gcm_siv::{
     KeyInit
 };
 use tokio::{
-    net::{TcpStream,TcpListener},
-    io::{AsyncWriteExt,AsyncReadExt},
-    time::{sleep,Duration},
+    net::{TcpStream, TcpListener},
+    io::{AsyncWriteExt, AsyncReadExt},
+    time::{sleep, Duration},
 };
 use rand::{
     rngs::StdRng,
@@ -29,9 +29,10 @@ use lazy_static::{
 };
 use std::{
     io::{self, BufWriter, Write, stdout},
-    sync::RwLock,
-    sync::Mutex,
-    fs::{File,OpenOptions}, net::{SocketAddr, SocketAddrV4, Ipv4Addr},
+    sync::{RwLock, Mutex},
+    fs::{File, OpenOptions, read_dir},
+    path::PathBuf,
+    net::{SocketAddr, SocketAddrV4, Ipv4Addr},
 };
 
 mod configuration;
@@ -165,6 +166,22 @@ async fn main() {
     simple_log!("\n\n[INFO] start of a new Laptev instance");
     tokio::spawn(async move {tcp_listener(DEFAULT_ADDRESS, DEFAULT_PORT).await});
     loop {
-
+        // time heals all wounds
+        sleep(Duration::from_secs(5)).await;
+        // scan a directory for new clips
+        let paths = match read_dir("./data") {
+            Ok(paths) => paths,
+            Err(error) => {
+                simple_log!("[WARNING] failed to read data path : {}", error);
+                continue;
+            },
+        };
+        let filepaths: Vec<PathBuf> = paths.into_iter().filter_map(|path| {
+            if path.is_ok() {
+                let path = path.unwrap().path();
+                if path.is_file() {Some(path)}
+                else {None}
+            } else {None}
+        }).collect();
     }
 }

@@ -29,12 +29,6 @@ picam2.set_controls({"Brightness": 0.15}) # max : 1.0
 picam2.set_controls({"Contrast": 1.4}) # max : 32.0
 picam2.set_controls({"Sharpness": 2.0}) # max : 16.0
 
-"""
-currently disabled, see line 64
-# capture config for the still images that will be used for face detection and recognition
-capture_config = picam2.create_still_configuration()
-"""
-
 # H264 seemingly doesn't work with 2304x1296, so I'll be using the standard 1080p 16:9 format
 video_config = picam2.create_video_configuration(main={"size": (1920, 1080), "format": "RGB888"},
                                                  lores={"size": lsize, "format": "YUV420"})
@@ -62,23 +56,16 @@ while True:
         if mse > 5:
             motion_count += 1
             motion_elapsed_counter = 0
-            """
-            disabled as it's not very useful, might need to reimplement it in the future
-            if motion_count == 2:
-                print("motion probably detected, taking images")
-                picam2.switch_mode(capture_config)
-                picam2.capture_file(f"output/image-{int(time())}.jpg")
-                sleep(0.1)
-                picam2.capture_file(f"output/image-{int(time())}.jpg")
-                sleep(0.1)
-                picam2.capture_file(f"output/image-{int(time())}.jpg")
-                picam2.switch_mode(video_config)
-                picam2.encoder = encoder
-            """
+
             if motion_count >= 3:
                 if not encoding:
                     print("motion detected", mse)
-                    encoder.output = FileOutput(f"output/{int(time())}.h264")
+                    timestamp = int(time())
+
+                    thumbnail = picam2.capture_array("lores")
+                    thumbnail.save(f"data/thumbnail-{timestamp}.jpg")
+
+                    encoder.output = FileOutput(f"data/motion-{int(time())}.h264")
                     picam2.start_encoder()
                     encoding = True
                 ltime = time()
