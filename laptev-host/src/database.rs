@@ -11,6 +11,7 @@ use std::{
     iter::FromIterator,
 };
 use tokio::{
+    fs,
 };
 
 #[derive(PartialEq)]
@@ -20,7 +21,7 @@ enum FileExtension {
 }
 
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct HostEntries(Vec<HostEntry>);
 
 impl FromIterator<HostEntry> for HostEntries {
@@ -90,6 +91,7 @@ impl HostEntries {
                 }
             }
         });
+
         let mut valid_timestamps : Vec<i64> = Vec::new();
         for (index_1, (stamp_1, ext_1)) in files_parsed_info.iter().enumerate() {
             for (stamp_2, ext_2) in files_parsed_info.iter().skip(index_1+1) {
@@ -99,17 +101,31 @@ impl HostEntries {
             }
         }
 
-        println!("{:?}", valid_timestamps);
+        let mut host_entries : Vec<HostEntry> = Vec::new();
+        for timestamp in valid_timestamps.into_iter() {
+            let filepath: PathBuf = ["./data", &format!("{}.jpg", timestamp.to_string())].iter().collect();
+            if filepath.is_file() {
+                match fs::read(&filepath).await {
+                    Ok(data) => host_entries.push(HostEntry::new(timestamp, data)),
+                    Err(error) => {simple_log!("[ERROR] failed to read thumbnail : {} due to : {}", HostEntries::get_filename(&filepath), error);},
+                }
+            }
+        };
 
-        let host_entries : Vec<HostEntry> = Vec::new();
         Some(Self(host_entries))
     }
 }
 
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 struct HostEntry {
     timestamp: i64,
     thumbnail: Vec<u8>,
+}
+
+impl HostEntry {
+    fn new(timestamp: i64, thumbnail: Vec<u8>) -> Self {
+        Self { timestamp, thumbnail }
+    }
 }
 

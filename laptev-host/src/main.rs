@@ -83,7 +83,7 @@ fn encrypt_with_cpk(data: &[u8], rng: &mut StdRng) -> io::Result<Vec<u8>> {
         Err(error) => {
             return Err(io::Error::new(
                 io::ErrorKind::ConnectionAborted,
-                format!("[ERROR] failed to encrypt the auth token using the client's public key\n{}", error)
+                format!("[ERROR] failed to encrypt the token using the client's public key\n{}", error)
             ));
         },
     }
@@ -159,6 +159,5 @@ async fn main() {
     loop {
         // time heals all wounds
         sleep(Duration::from_secs(5)).await;
-        crate::database::HostEntries::sync().await;
     }
 }
