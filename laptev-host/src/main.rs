@@ -1,7 +1,4 @@
-use tiny_http::{
-    Server,
-    Response,
-};
+use time::OffsetDateTime;
 use rsa::{
     RsaPublicKey,
     Pkcs1v15Encrypt,
@@ -28,10 +25,8 @@ use lazy_static::{
     initialize as ls_initialize,
 };
 use std::{
-    io::{self, BufWriter, Write, stdout},
+    io::{self, BufWriter, Write},
     sync::{RwLock, Mutex},
-    fs::{File, OpenOptions, read_dir},
-    path::PathBuf,
     net::{SocketAddr, SocketAddrV4, Ipv4Addr},
 };
 
@@ -42,11 +37,13 @@ use configuration::{
     DEFAULT_PORT,
 };
 
+mod database;
+
 lazy_static! {
     static ref CLIENT_PUBLIC_KEY:RwLock<RsaPublicKey> = RwLock::new(RsaPublicKey::from_public_key_pem(&CLIENT_PUBLIC_KEY_PEM).unwrap());
 
-    static ref LOG_FILE: Mutex<BufWriter<File>> = {
-        let file = OpenOptions::new().create(true).append(true).open("laptev-host.log").unwrap();
+    static ref LOG_FILE: Mutex<BufWriter<std::fs::File>> = {
+        let file = std::fs::OpenOptions::new().create(true).append(true).open("laptev-host.log").unwrap();
         Mutex::new(BufWriter::new(file))
     };
 }
@@ -62,6 +59,13 @@ macro_rules! simple_log {
             Err(error) => eprintln!("[WARNING] {}", error),
         }
     }
+}
+pub(crate) use simple_log;
+
+// ## helper functions
+
+fn tstamp() -> i64 {
+    OffsetDateTime::now_utc().unix_timestamp()
 }
 
 fn encrypt_with_cpk(data: &[u8], rng: &mut StdRng) -> io::Result<Vec<u8>> {
@@ -85,22 +89,9 @@ fn encrypt_with_cpk(data: &[u8], rng: &mut StdRng) -> io::Result<Vec<u8>> {
     }
 }
 
-fn http_server() {
-    let server = Server::http("0.0.0.0:34567").unwrap();
+// ## main functions
 
-    for request in server.incoming_requests() {
-        println!("received request! method: {:?}, url: {:?}, headers: {:?}",
-            request.method(),
-            request.url(),
-            request.headers()
-        );
-        let response = Response::from_string("hello world");
-
-        request.respond(response).unwrap();
-    }
-}
-
-async fn tcp_listener(address: &str, port: usize) {
+async fn tcp_listener(address: &str, port: u16) {
     loop {
         let listener : TcpListener = match TcpListener::bind(&format!("{}:{}", address, port)).await {
             Ok(listener) => listener,
@@ -115,7 +106,7 @@ async fn tcp_listener(address: &str, port: usize) {
                 Ok(tuple) => tuple,
                 Err(..) => continue,
             };
-            simple_log!("[INFO] receiving a connection from : {}", addr);
+            simple_log!("[INFO][{}] receiving a connection from : {}", tstamp(), addr);
             tokio::spawn(async move {handle_client(stream).await.unwrap();});
         }
     }
@@ -163,25 +154,11 @@ async fn handle_client(mut stream: TcpStream) -> io::Result<()> {
 async fn main() {
     ls_initialize(&CLIENT_PUBLIC_KEY);
     ls_initialize(&LOG_FILE);
-    simple_log!("\n\n[INFO] start of a new Laptev instance");
+    simple_log!("\n\n[INFO][{}] start of a new Laptev instance", tstamp());
     tokio::spawn(async move {tcp_listener(DEFAULT_ADDRESS, DEFAULT_PORT).await});
     loop {
         // time heals all wounds
         sleep(Duration::from_secs(5)).await;
-        // scan a directory for new clips
-        let paths = match read_dir("./data") {
-            Ok(paths) => paths,
-            Err(error) => {
-                simple_log!("[WARNING] failed to read data path : {}", error);
-                continue;
-            },
-        };
-        let filepaths: Vec<PathBuf> = paths.into_iter().filter_map(|path| {
-            if path.is_ok() {
-                let path = path.unwrap().path();
-                if path.is_file() {Some(path)}
-                else {None}
-            } else {None}
-        }).collect();
+        crate::database::HostEntries::sync().await;
     }
 }

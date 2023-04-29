@@ -59,13 +59,12 @@ while True:
 
             if motion_count >= 3:
                 if not encoding:
-                    print("motion detected", mse)
                     timestamp = int(time())
 
                     thumbnail = picam2.capture_array("lores")
-                    thumbnail.save(f"data/thumbnail-{timestamp}.jpg")
+                    thumbnail.save(f"data/{timestamp}.jpg")
 
-                    encoder.output = FileOutput(f"data/motion-{int(time())}.h264")
+                    encoder.output = FileOutput(f"data/{timestamp}.h264")
                     picam2.start_encoder()
                     encoding = True
                 ltime = time()

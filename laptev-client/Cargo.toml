@@ -19,3 +19,5 @@ aes-gcm-siv = "0.11.1"
 rand = "0.8.5"
 iced_futures = { version = "0.6.0", features = ["tokio"] }
 iced_native = "0.10.3"
+time = { version = "0.3.20", features = ["serde", "local-offset"] }
+serde_json = "1.0.96"

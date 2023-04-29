@@ -109,7 +109,6 @@ enum Mode {
 
 struct Recording {
     thumbnail: Image,
-    filename: String,
     timestamp: (),
 }
 

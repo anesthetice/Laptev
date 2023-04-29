@@ -1,5 +1,6 @@
 */target
-/archives
 */Cargo.lock
+*/configuration.rs
+/archives
 laptev-host/data
 laptev-host/laptev-host.log
