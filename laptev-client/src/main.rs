@@ -30,7 +30,7 @@ use time::UtcOffset;
 use std::{
     io,
     sync::Arc,
-    fmt::Debug, str::Utf8Error,
+    fmt::Debug,
 };
 
 mod configuration;
@@ -220,16 +220,24 @@ impl Application for Laptev {
                 self.address = string;
                 Command::none()
             },
+
             Message::Connect => {
                 self.mode = Mode::AttemptingConnection;
                 let address_clone: String = self.address.clone();
                 Command::perform(Connection::new(address_clone), Message::ConnectionAttempt)
+            },
+            Message::Disconnect => {
+                // I think this should drop the entire Connection structure
+                self.mode = Mode::Disconnected;
+                self.recordings.clear();
+                Command::single(Action::Window(WindowAction::Resize { width: 300, height: 400 }))
             },
             Message::ConnectionAttempt(attempt) => {
                 match attempt {
                     Some(connection_arc_mutex) => {
                         self.mode = Mode::Connected(connection_arc_mutex, ConnectedState::Syncing);
                         Command::single(Action::Window(WindowAction::Resize { width: 1280, height: 720 }))
+                        // add batch command to sync with server
                     },
                     None => {
                         self.mode = Mode::Disconnected;
@@ -238,29 +246,25 @@ impl Application for Laptev {
                 }
                 
             },
-            Message::Disconnect => {
-                // I think this should drop the entire Connection structure
-                self.mode = Mode::Disconnected;
-                self.recordings.clear();
-                Command::single(Action::Window(WindowAction::Resize { width: 300, height: 400 }))
-            },
 
-            Message::SendSyncCommand => {
-                Command::none()
-            }
-
-            Message::CustomCommandInputChanged(string) => {
-                self.custom_command = string;
+            Message::SyncWithHost => {
                 Command::none()
             },
-            Message::SendCustomCommand => {
+            Message::SyncDone => {
                 match &self.mode {
-                    Mode::Connected(connection, connection_state) => {
-                        let command_clone: String = self.custom_command.clone();
-                        Command::perform(Connection::send_command(connection.clone(), command_clone), Message::Blank)
-                    }
-                    _ => Command::none(),
+                    Mode::Connected(connection, _) => {
+                        self.mode = Mode::Connected(connection.clone(), ConnectedState::Synced);
+                    },
+                    _ => {},
                 }
+                Command::none()
+            },
+
+            Message::GetCommand(timestamp) => {
+                Command::none()
+            },
+            Message::DelCommand(timestamp) => {
+                Command::none()
             },
             Message::Blank(()) => {
                 Command::none()
@@ -307,19 +311,38 @@ impl Application for Laptev {
                 .spacing(10)
                 .into()
             }
-            Mode::Connected(..) => {
-                column![
-                    button(text("synchronize with server").horizontal_alignment(alignment::Horizontal::Center))
-                        .on_press(Message::SendSyncCommand),
-                    text_input("command", self.custom_command.as_str())
-                        .on_input(Message::CustomCommandInputChanged)
-                        .on_submit(Message::SendCustomCommand)
-                        .padding([10, 5]),
-                    button(text("disconnect").horizontal_alignment(alignment::Horizontal::Center))
-                        .on_press(Message::Disconnect)
-                        .padding(5)
-                        .width(100),
-                ].into()
+            Mode::Connected(_, state) => {
+                match state {
+                    ConnectedState::Syncing => {
+                        column![
+                            image("./res/icon-clear.png")
+                                .width(175)
+                                .height(175),
+                            text("synchronizing with server")
+                                .horizontal_alignment(alignment::Horizontal::Center)
+                                .vertical_alignment(alignment::Vertical::Center),
+                            text("...")
+                                .horizontal_alignment(alignment::Horizontal::Center)
+                                .vertical_alignment(alignment::Vertical::Center),
+                        ]
+                        .align_items(alignment::Alignment::Center)
+                        .padding([20, 63])
+                        .spacing(10)
+                        .into()
+                    },
+                    ConnectedState::Synced => {
+                        column![
+                            button(text("synchronize with server").horizontal_alignment(alignment::Horizontal::Center))
+                                .on_press(Message::SyncWithHost),
+        
+                            button(text("disconnect").horizontal_alignment(alignment::Horizontal::Center))
+                                .on_press(Message::Disconnect)
+                                .padding(5)
+                                .width(100),
+                        ].into()
+                    }
+                }
+
             }
         }
     }
@@ -328,14 +351,15 @@ impl Application for Laptev {
 #[derive(Debug, Clone)]
 pub enum Message {
     AddressInputChanged(String),
+
     Connect,
-    ConnectionAttempt(Option<Arc<Mutex<Connection>>>),
     Disconnect,
+    ConnectionAttempt(Option<Arc<Mutex<Connection>>>),
 
-    SendSyncCommand,
-
-    CustomCommandInputChanged(String),
-    SendCustomCommand,
+    SyncWithHost,
+    SyncDone,
+    GetCommand(i64),
+    DelCommand(i64),
 
     Blank(()),
 }
