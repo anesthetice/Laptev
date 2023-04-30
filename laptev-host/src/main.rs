@@ -172,13 +172,22 @@ async fn handle_client(mut stream: TcpStream) -> io::Result<()> {
     loop {
         let mut command_buffer : Vec<u8> = vec![0; 1612];
         match stream.read(&mut command_buffer).await {
-            Ok(..) => println!("ok"),
+            Ok(bytes_read) => if bytes_read == 0 {
+                simple_log!("[INFO][{}] closing connection with : {}", tstamp(), stream.peer_addr()?);
+                stream.shutdown().await?;
+                return Ok(());
+            }
             Err(error) => {
-                simple_log!("[WARNING] failed reading from stream : {}", error);
+                if error.kind() == std::io::ErrorKind::ConnectionReset {
+                    simple_log!("[INFO][{}] closing connection with : {}", tstamp(), stream.peer_addr()?);
+                    stream.shutdown().await?;
+                    return Ok(())
+                }
+                simple_log!("[WARNING] failed reading from stream : {:?}", error);
                 continue;
             },
         };
-        println!("{:?}", command_buffer);
+
         let nonce = Nonce::clone_from_slice(&command_buffer[0..12]);
         let data: Vec<u8> = match cipher.decrypt(&nonce, &command_buffer[12..]) {
             Ok(data) => data,
@@ -187,6 +196,7 @@ async fn handle_client(mut stream: TcpStream) -> io::Result<()> {
                 continue;
             },
         };
+
         let data: String = String::from_utf8_lossy(&data).trim().trim_end_matches(char::from(0)).to_string();
         println!("{}", data);
     }

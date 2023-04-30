@@ -40,7 +40,6 @@ use configuration::{
 
 lazy_static! {
     pub static ref CLIENT_PRIVATE_KEY: RsaPrivateKey = RsaPrivateKey::from_pkcs8_pem(&CLIENT_PRIVATE_KEY_PEM).unwrap();
-    pub static ref ICON_FILEPATH: String = format!("{}/res/icon.png", env!("CARGO_MANIFEST_DIR"));
 }
 
 use iced::{
@@ -99,25 +98,31 @@ impl Connection {
             let mut nonce_slice: [u8; 12] = [0; 12]; conn_self.rng.fill_bytes(&mut nonce_slice);
             Nonce::clone_from_slice(&nonce_slice)
         };
-        println!("message : {}", command);
-        println!("nonce : {:?}\n\n", nonce);
-        let mut encrypted_command: Vec<u8> = match conn_self.cipher.encrypt(&nonce, command.as_bytes()) {
+
+        let mut command : Vec<u8> = command.into_bytes();
+        if command.len() < 1584 {
+            while command.len() < 1584 {command.push(0)}
+        }
+        else if command.len() > 1584 {
+            eprintln!("[WARNING] command is too large");
+            return;
+        }
+
+        let mut encrypted_command: Vec<u8> = match conn_self.cipher.encrypt(&nonce, command.as_ref()) {
             Ok(enc_command) => enc_command,
             Err(error) => {
                 eprintln!("[WARNING] failed to encrypt command : {}", error);
                 return;
             },
         };
+
         nonce.into_iter().rev().for_each(|byte| {encrypted_command.insert(0, byte)});
-        println!("final command : {:?}", encrypted_command);
-        if (encrypted_command.len() <= 1612) {
+        println!("{}", encrypted_command.len());
+        if encrypted_command.len() == 1612 {
             match conn_self.stream.write_all(&encrypted_command).await {
-                Ok(..) => (),
-                Err(error) => eprintln!("[WARNING] failed to send command"),
+                Ok(..) => {conn_self.stream.flush().await;},
+                Err(error) => eprintln!("[WARNING] failed to send command : {}", error),
             }
-        } else {
-            eprintln!("[WARNING] command is too large");
-            return;
         }
     }
 }
@@ -231,7 +236,7 @@ impl Application for Laptev {
         match self.mode {
             Mode::Disconnected => {
                 column![
-                    image(format!("{}/res/icon.png", env!("CARGO_MANIFEST_DIR")))
+                    image("./res/icon-clear.png")
                         .width(175)
                         .height(175),
                     text_input("address:port", self.address.as_str())
@@ -250,7 +255,7 @@ impl Application for Laptev {
             },
             Mode::AttemptingConnection => {
                 column![
-                    image(format!("{}/res/icon.png", env!("CARGO_MANIFEST_DIR")))
+                    image("./res/icon-clear.png")
                         .width(175)
                         .height(175),
                     text("conecting")
@@ -295,14 +300,13 @@ pub enum Message {
 #[tokio::main]
 async fn main() -> iced::Result {
     ls_initialize(&CLIENT_PRIVATE_KEY);
-    ls_initialize(&ICON_FILEPATH);
 
     let settings: iced::Settings<()> = Settings {
         window: window::Settings {
             size: (300, 400),
             resizable: true,
             decorations: true,
-            icon: Some(icon::from_file(ICON_FILEPATH.as_str()).unwrap()),
+            icon: Some(icon::from_file("./res/icon-chilly.png").unwrap()),
             ..Default::default()
         },
         ..Default::default()
