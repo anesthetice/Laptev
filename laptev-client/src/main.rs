@@ -4,6 +4,7 @@ use rsa::{
     Pkcs1v15Encrypt,
 };
 use aes_gcm_siv::{
+    aead::Aead,
     Aes256GcmSiv,
     Nonce,
     KeyInit
@@ -14,6 +15,7 @@ use tokio::{
         AsyncWriteExt,
         AsyncReadExt,
     },
+    sync::Mutex,
 };
 use rand::{
     rngs::StdRng,
@@ -70,7 +72,7 @@ impl Debug for Connection {
 }
 
 impl Connection {
-    async fn new(address: String) -> Option<Arc<Self>> {
+    async fn new(address: String) -> Option<Arc<Mutex<Self>>> {
         let mut stream: TcpStream = TcpStream::connect(address).await.ok()?;
         let rng: StdRng = StdRng::from_entropy();
         // authentication using RSA
@@ -89,7 +91,34 @@ impl Connection {
             Aes256GcmSiv::new_from_slice(&key[..]).ok()?
         };
 
-        return Some(Arc::new(Self{stream, rng, cipher,}));
+        return Some(Arc::new(Mutex::new(Self{stream, rng, cipher,})));
+    }
+    async fn send_command(arc_mutex_self: Arc<Mutex<Self>>, command: String) -> () {
+        let mut conn_self = arc_mutex_self.lock().await;
+        let nonce = {
+            let mut nonce_slice: [u8; 12] = [0; 12]; conn_self.rng.fill_bytes(&mut nonce_slice);
+            Nonce::clone_from_slice(&nonce_slice)
+        };
+        println!("message : {}", command);
+        println!("nonce : {:?}\n\n", nonce);
+        let mut encrypted_command: Vec<u8> = match conn_self.cipher.encrypt(&nonce, command.as_bytes()) {
+            Ok(enc_command) => enc_command,
+            Err(error) => {
+                eprintln!("[WARNING] failed to encrypt command : {}", error);
+                return;
+            },
+        };
+        nonce.into_iter().rev().for_each(|byte| {encrypted_command.insert(0, byte)});
+        println!("final command : {:?}", encrypted_command);
+        if (encrypted_command.len() <= 1612) {
+            match conn_self.stream.write_all(&encrypted_command).await {
+                Ok(..) => (),
+                Err(error) => eprintln!("[WARNING] failed to send command"),
+            }
+        } else {
+            eprintln!("[WARNING] command is too large");
+            return;
+        }
     }
 }
 
@@ -97,7 +126,7 @@ impl Connection {
 enum Mode {
     Disconnected,
     AttemptingConnection,
-    Connected(Connection),
+    Connected(Arc<Mutex<Connection>>),
 }
 
 struct Recording {
@@ -107,8 +136,9 @@ struct Recording {
 
 struct Laptev {
     address: String,
+    custom_command: String,
     mode: Mode,
-    recordings: Vec<Recording>,
+    recordings: Vec<Recording>, 
 }
 
 impl Laptev {
@@ -116,6 +146,7 @@ impl Laptev {
         return Laptev {
             address: ADDRESS.to_string(),
             mode: Mode::Disconnected,
+            custom_command: String::new(),
             recordings: Vec::new(),
         };
     }
@@ -148,6 +179,10 @@ impl Application for Laptev {
 
     fn update(&mut self, message: Message) -> Command<Self::Message> {
         match message {
+            Message::AddressInputChanged(string) => {
+                self.address = string;
+                Command::none()
+            },
             Message::Connect => {
                 self.mode = Mode::AttemptingConnection;
                 let address_clone: String = self.address.clone();
@@ -155,8 +190,8 @@ impl Application for Laptev {
             },
             Message::ConnectionAttempt(attempt) => {
                 match attempt {
-                    Some(connection_arc) => {
-                        self.mode = Mode::Connected(Arc::try_unwrap(connection_arc).unwrap());
+                    Some(connection_arc_mutex) => {
+                        self.mode = Mode::Connected(connection_arc_mutex);
                         Command::single(Action::Window(WindowAction::Resize { width: 1280, height: 720 }))
                     },
                     None => {
@@ -166,16 +201,28 @@ impl Application for Laptev {
                 }
                 
             },
-            Message::InputChanged(new_data) => {
-                self.address = new_data.to_string();
-                Command::none()
-            },
             Message::Disconnect => {
                 // I think this should drop the entire Connection structure
                 self.mode = Mode::Disconnected;
                 self.recordings.clear();
                 Command::single(Action::Window(WindowAction::Resize { width: 300, height: 400 }))
-            }
+            },
+            Message::CommandInputChanged(string) => {
+                self.custom_command = string;
+                Command::none()
+            },
+            Message::SendCustomCommand => {
+                match &self.mode {
+                    Mode::Connected(connection) => {
+                        let command_clone: String = self.custom_command.clone();
+                        Command::perform(Connection::send_command(connection.clone(), command_clone), Message::Blank)
+                    }
+                    _ => Command::none(),
+                }
+            },
+            Message::Blank(()) => {
+                Command::none()
+            },
         }
     }
 
@@ -188,7 +235,8 @@ impl Application for Laptev {
                         .width(175)
                         .height(175),
                     text_input("address:port", self.address.as_str())
-                        .on_input(Message::InputChanged)
+                        .on_input(Message::AddressInputChanged)
+                        .on_submit(Message::Connect)
                         .padding([10, 5]),
                     button(text("connect").horizontal_alignment(alignment::Horizontal::Center))
                         .on_press(Message::Connect)
@@ -219,6 +267,10 @@ impl Application for Laptev {
             }
             Mode::Connected(..) => {
                 column![
+                    text_input("command", self.custom_command.as_str())
+                        .on_input(Message::CommandInputChanged)
+                        .on_submit(Message::SendCustomCommand)
+                        .padding([10, 5]),
                     button(text("disconnect").horizontal_alignment(alignment::Horizontal::Center))
                         .on_press(Message::Disconnect)
                         .padding(5)
@@ -231,10 +283,13 @@ impl Application for Laptev {
 
 #[derive(Debug, Clone)]
 pub enum Message {
+    AddressInputChanged(String),
     Connect,
-    ConnectionAttempt(Option<Arc<Connection>>),
-    InputChanged(String),
+    ConnectionAttempt(Option<Arc<Mutex<Connection>>>),
     Disconnect,
+    CommandInputChanged(String),
+    SendCustomCommand,
+    Blank(()),
 }
 
 #[tokio::main]

@@ -172,12 +172,13 @@ async fn handle_client(mut stream: TcpStream) -> io::Result<()> {
     loop {
         let mut command_buffer : Vec<u8> = vec![0; 1612];
         match stream.read(&mut command_buffer).await {
-            Ok(..) => (),
+            Ok(..) => println!("ok"),
             Err(error) => {
                 simple_log!("[WARNING] failed reading from stream : {}", error);
                 continue;
             },
         };
+        println!("{:?}", command_buffer);
         let nonce = Nonce::clone_from_slice(&command_buffer[0..12]);
         let data: Vec<u8> = match cipher.decrypt(&nonce, &command_buffer[12..]) {
             Ok(data) => data,
