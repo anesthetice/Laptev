@@ -157,7 +157,7 @@ impl HostEntries {
             }
         }
     }
-    pub async fn into_serde_bytes(self) -> Vec<u8> {
+    pub async fn into_json_bytes(self) -> Vec<u8> {
         match serde_json::to_vec(&self) {
             Ok(data) => data,
             Err(error) => {

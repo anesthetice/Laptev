@@ -93,6 +93,27 @@ fn encrypt_with_cpk(data: &[u8], rng: &mut StdRng) -> io::Result<Vec<u8>> {
 
 // ## main functions
 
+async fn tcp_listener(address: &str, port: u16) {
+    loop {
+        let listener : TcpListener = match TcpListener::bind(&format!("{}:{}", address, port)).await {
+            Ok(listener) => listener,
+            Err(..) => {
+                sleep(Duration::from_secs(5)).await;
+                continue;
+            }
+        };
+        simple_log!("[INFO] listener bound to port {}", port);
+        loop {
+            let (stream, addr) =  match listener.accept().await {
+                Ok(tuple) => tuple,
+                Err(..) => continue,
+            };
+            simple_log!("[INFO][{}] receiving a connection from : {}", tstamp(), addr);
+            tokio::spawn(async move {handle_client(stream).await.unwrap();});
+        }
+    }
+}
+
 enum ClientRequest {
     Sync,
     Delete(i64),
@@ -118,27 +139,6 @@ impl ClientRequest {
             };
         }
         ClientRequest::Uknown
-    }
-}
-
-async fn tcp_listener(address: &str, port: u16) {
-    loop {
-        let listener : TcpListener = match TcpListener::bind(&format!("{}:{}", address, port)).await {
-            Ok(listener) => listener,
-            Err(..) => {
-                sleep(Duration::from_secs(5)).await;
-                continue;
-            }
-        };
-        simple_log!("[INFO] listener bound to port {}", port);
-        loop {
-            let (stream, addr) =  match listener.accept().await {
-                Ok(tuple) => tuple,
-                Err(..) => continue,
-            };
-            simple_log!("[INFO][{}] receiving a connection from : {}", tstamp(), addr);
-            tokio::spawn(async move {handle_client(stream).await.unwrap();});
-        }
     }
 }
 
@@ -169,8 +169,9 @@ async fn handle_client(mut stream: TcpStream) -> io::Result<()> {
     simple_log!("[INFO] connection secured with : {:?}", stream.peer_addr().unwrap_or(SocketAddr::from(SocketAddrV4::new(Ipv4Addr::new(0, 0, 0, 0), 0))));
     
     // 12 bytes for the nonce, 16*100 bytes for the encrypted data
+    let mut command_buffer : Vec<u8> = Vec::new();
     loop {
-        let mut command_buffer : Vec<u8> = vec![0; 1612];
+        command_buffer = vec![0; 1612];
         match stream.read(&mut command_buffer).await {
             Ok(bytes_read) => if bytes_read == 0 {
                 simple_log!("[INFO][{}] closing connection with : {}", tstamp(), stream.peer_addr()?);
@@ -187,18 +188,63 @@ async fn handle_client(mut stream: TcpStream) -> io::Result<()> {
                 continue;
             },
         };
-
         let nonce = Nonce::clone_from_slice(&command_buffer[0..12]);
         let data: Vec<u8> = match cipher.decrypt(&nonce, &command_buffer[12..]) {
             Ok(data) => data,
             Err(error) => {
-                simple_log!("[WARNING] failed decrypting stream data : {}", error);
+                simple_log!("[WARNING] failed to decrypt stream data : {}", error);
                 continue;
             },
         };
 
-        let data: String = String::from_utf8_lossy(&data).trim().trim_end_matches(char::from(0)).to_string();
-        println!("{}", data);
+        let command: String = String::from_utf8_lossy(&data).trim().trim_end_matches(char::from(0)).to_string();
+        drop(data); drop(nonce);
+        simple_log!("[INFO][{}] received command : '{}', from : {}", tstamp(), &command, stream.peer_addr()?);
+
+        match ClientRequest::from_str(&command) {
+            ClientRequest::Sync => {
+                let data: Vec<u8> = match HostEntries::sync().await {
+                    Some(data) => data.into_json_bytes().await,
+                    None => continue,
+                };
+                let nonce = {
+                    let mut nonce_slice: [u8; 12] = [0; 12]; rng.fill_bytes(&mut nonce_slice);
+                    Nonce::clone_from_slice(&nonce_slice)
+                };
+                let data = match cipher.encrypt(&nonce, data.as_ref()) {
+                    Ok(data) => data,
+                    Err(error) => {
+                        simple_log!("[WARNING] failed to encrypt HostEntries : {}", error);
+                        continue;
+                    },
+                };
+                match stream.write_all(&nonce).await {
+                    Ok(..) => {
+                        stream.flush().await;
+                    },
+                    Err(error) => {
+                        simple_log!("[WARNING] failed to write nonce to stream");
+                        continue;
+                    }
+                }
+                match stream.write_all(&data).await {
+                    Ok(..) => {
+                        stream.flush().await;
+                    },
+                    Err(error) => {
+                        simple_log!("[WARNING] failed to write nonce to stream");
+                        continue;
+                    }
+                }
+            },
+            ClientRequest::Get(timestamp) => {
+
+            },
+            ClientRequest::Delete(timestamp) => {
+
+            },
+            ClientRequest::Uknown => (),
+        }
     }
 
     // always create a new different nonce and send it alongside your message

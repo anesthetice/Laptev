@@ -26,10 +26,11 @@ use lazy_static::{
     lazy_static,
     initialize as ls_initialize,
 };
+use time::UtcOffset;
 use std::{
     io,
     sync::Arc,
-    fmt::Debug,
+    fmt::Debug, str::Utf8Error,
 };
 
 mod configuration;
@@ -38,8 +39,12 @@ use configuration::{
     ADDRESS,
 };
 
+mod database;
+use database::ClientEntries;
+
 lazy_static! {
     pub static ref CLIENT_PRIVATE_KEY: RsaPrivateKey = RsaPrivateKey::from_pkcs8_pem(&CLIENT_PRIVATE_KEY_PEM).unwrap();
+    pub static ref LOCAL_OFFSET: UtcOffset = UtcOffset::current_local_offset().unwrap();
 }
 
 use iced::{
@@ -57,6 +62,33 @@ use iced_futures::backend::native::tokio as tokio_iced;
 use iced_native::command::Action;
 use iced_native::window::Action as WindowAction;
 
+enum ClientRequest {
+    Sync,
+    Delete(i64),
+    Get(i64),
+    Uknown,
+}
+
+impl ClientRequest {
+    fn from_str(request: &str) -> Self {
+        if request.starts_with("SYNC") {
+           return  ClientRequest::Sync;
+        }
+        else if request.starts_with("DELETE ") {
+            match request.replace("DELETE ", "").parse::<i64>() {
+                Ok(timestamp) => return ClientRequest::Delete(timestamp),
+                Err(..) => return ClientRequest::Uknown,
+            };
+        }
+        else if request.starts_with("GET ") {
+            match request.replace("GET ", "").parse::<i64>() {
+                Ok(timestamp) => return ClientRequest::Get(timestamp),
+                Err(..) => return ClientRequest::Uknown,
+            };
+        }
+        ClientRequest::Uknown
+    }
+}
 
 pub struct Connection {
     stream: TcpStream,
@@ -107,7 +139,6 @@ impl Connection {
             eprintln!("[WARNING] command is too large");
             return;
         }
-
         let mut encrypted_command: Vec<u8> = match conn_self.cipher.encrypt(&nonce, command.as_ref()) {
             Ok(enc_command) => enc_command,
             Err(error) => {
@@ -127,23 +158,24 @@ impl Connection {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+enum ConnectedState {
+    Synced,
+    Syncing
+}
+
 #[derive(Debug)]
 enum Mode {
     Disconnected,
     AttemptingConnection,
-    Connected(Arc<Mutex<Connection>>),
-}
-
-struct Recording {
-    thumbnail: Image,
-    timestamp: (),
+    Connected(Arc<Mutex<Connection>>, ConnectedState),
 }
 
 struct Laptev {
     address: String,
     custom_command: String,
     mode: Mode,
-    recordings: Vec<Recording>, 
+    recordings: ClientEntries, 
 }
 
 impl Laptev {
@@ -152,7 +184,7 @@ impl Laptev {
             address: ADDRESS.to_string(),
             mode: Mode::Disconnected,
             custom_command: String::new(),
-            recordings: Vec::new(),
+            recordings: ClientEntries::default(),
         };
     }
 }
@@ -196,7 +228,7 @@ impl Application for Laptev {
             Message::ConnectionAttempt(attempt) => {
                 match attempt {
                     Some(connection_arc_mutex) => {
-                        self.mode = Mode::Connected(connection_arc_mutex);
+                        self.mode = Mode::Connected(connection_arc_mutex, ConnectedState::Syncing);
                         Command::single(Action::Window(WindowAction::Resize { width: 1280, height: 720 }))
                     },
                     None => {
@@ -212,13 +244,18 @@ impl Application for Laptev {
                 self.recordings.clear();
                 Command::single(Action::Window(WindowAction::Resize { width: 300, height: 400 }))
             },
-            Message::CommandInputChanged(string) => {
+
+            Message::SendSyncCommand => {
+                Command::none()
+            }
+
+            Message::CustomCommandInputChanged(string) => {
                 self.custom_command = string;
                 Command::none()
             },
             Message::SendCustomCommand => {
                 match &self.mode {
-                    Mode::Connected(connection) => {
+                    Mode::Connected(connection, connection_state) => {
                         let command_clone: String = self.custom_command.clone();
                         Command::perform(Connection::send_command(connection.clone(), command_clone), Message::Blank)
                     }
@@ -272,8 +309,10 @@ impl Application for Laptev {
             }
             Mode::Connected(..) => {
                 column![
+                    button(text("synchronize with server").horizontal_alignment(alignment::Horizontal::Center))
+                        .on_press(Message::SendSyncCommand),
                     text_input("command", self.custom_command.as_str())
-                        .on_input(Message::CommandInputChanged)
+                        .on_input(Message::CustomCommandInputChanged)
                         .on_submit(Message::SendCustomCommand)
                         .padding([10, 5]),
                     button(text("disconnect").horizontal_alignment(alignment::Horizontal::Center))
@@ -292,14 +331,19 @@ pub enum Message {
     Connect,
     ConnectionAttempt(Option<Arc<Mutex<Connection>>>),
     Disconnect,
-    CommandInputChanged(String),
+
+    SendSyncCommand,
+
+    CustomCommandInputChanged(String),
     SendCustomCommand,
+
     Blank(()),
 }
 
 #[tokio::main]
 async fn main() -> iced::Result {
     ls_initialize(&CLIENT_PRIVATE_KEY);
+    ls_initialize(&LOCAL_OFFSET);
 
     let settings: iced::Settings<()> = Settings {
         window: window::Settings {
