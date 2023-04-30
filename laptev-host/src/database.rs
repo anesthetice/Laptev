@@ -55,11 +55,6 @@ impl HostEntries {
         }
     }
     pub async fn sync() -> Option<Self> {
-        let current_time: i64 = tstamp();
-        // max 5 days
-        let max_time_difference: i64 = 432000;
-        // scan a directory for new clips
-        // using std::fs::read_dir to use with .into_iter(), tokio::fs::read_dir is a bit barebones
         let paths = match std::fs::read_dir("./data") {
             Ok(paths) => paths,
             Err(error) => {
@@ -68,29 +63,22 @@ impl HostEntries {
             },
         };
         let mut files_parsed_info: Vec<(i64, FileExtension)> = Vec::new();
-
-        paths.into_iter().for_each(|current_path| {
+        for current_path in paths.into_iter() {
             if current_path.is_ok() {
                 let current_path = current_path.unwrap().path();
                 if current_path.is_file() {
-                    let timestamp: i64 =match HostEntries::get_timestamp(&current_path) {
+                    let timestamp: i64 = match HostEntries::get_timestamp(&current_path) {
                         Some(stamp) => stamp,
-                        None => return,
+                        None => continue,
                     };
                     let extension: FileExtension = match HostEntries::get_extension(&current_path) {
                         Some(ext) => ext,
-                        None => return,
+                        None => continue,
                     };
-                    if (current_time - timestamp) > max_time_difference {
-                        match std::fs::remove_file(&current_path) {
-                            Ok(..) => {simple_log!("[INFO] removed expired file : {}", HostEntries::get_filename(&current_path));},
-                            Err(error) => {simple_log!("[WARNING] failed to remove expired file : {} due to : {}", HostEntries::get_filename(&current_path), error);}
-                        }
-                    }
                     files_parsed_info.push((timestamp, extension))
                 }
             }
-        });
+        };
 
         let mut valid_timestamps : Vec<i64> = Vec::new();
         for (index_1, (stamp_1, ext_1)) in files_parsed_info.iter().enumerate() {
@@ -114,7 +102,72 @@ impl HostEntries {
 
         Some(Self(host_entries))
     }
+    pub async fn clean_older_than(seconds: i64) -> () {
+        let current_time: i64 = tstamp();
+        simple_log!("[INFO][{}] cleaning anything older than {} seconds", &current_time, &seconds);
+
+        let paths = match std::fs::read_dir("./data") {
+            Ok(paths) => paths,
+            Err(error) => {
+                simple_log!("[WARNING] failed to read the data directory: {}", error);
+                return;
+            },
+        };
+        for current_path in paths.into_iter() {
+            if current_path.is_ok() {
+                let current_path = current_path.unwrap().path();
+                if current_path.is_file() {
+                    let timestamp: i64 = match HostEntries::get_timestamp(&current_path) {
+                        Some(stamp) => stamp,
+                        None => return,
+                    };
+                    if (current_time - timestamp) > seconds {
+                        match fs::remove_file(&current_path).await {
+                            Ok(..) => {simple_log!("[INFO] removed expired file : {}", HostEntries::get_filename(&current_path));},
+                            Err(error) => {simple_log!("[WARNING] failed to remove expired file : {} due to : {}", HostEntries::get_filename(&current_path), error);}
+                        }
+                    }
+                }
+            }
+        };
+    }
+    pub async fn delete(timestamp: i64) -> () {
+        let paths = match std::fs::read_dir("./data") {
+            Ok(paths) => paths,
+            Err(error) => {
+                simple_log!("[WARNING] failed to read the data directory: {}", error);
+                return;
+            },
+        };
+        for current_path in paths.into_iter() {
+            if current_path.is_ok() {
+                let current_path = current_path.unwrap().path();
+                if current_path.is_file() {
+                    let file_timestamp: i64 = match HostEntries::get_timestamp(&current_path) {
+                        Some(stamp) => stamp,
+                        None => return,
+                    };
+                    if file_timestamp == timestamp {
+                        match fs::remove_file(&current_path).await {
+                                Ok(..) => {simple_log!("[INFO] removed file : {}", HostEntries::get_filename(&current_path));},
+                                Err(error) => {simple_log!("[WARNING] failed to remove file : {} due to : {}", HostEntries::get_filename(&current_path), error);}
+                        }
+                    }
+                }
+            }
+        }
+    }
+    pub async fn into_serde_bytes(self) -> Vec<u8> {
+        match serde_json::to_vec(&self) {
+            Ok(data) => data,
+            Err(error) => {
+                simple_log!("[ERROR] could not parse HostEntries to json : {}", error);
+                Vec::new()
+            },
+        }
+    }
 }
+
 
 
 #[derive(Debug, Serialize, Deserialize)]

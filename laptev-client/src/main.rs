@@ -1,10 +1,3 @@
-use reqwest::{
-    self,
-    Method,
-    Url,
-    Body,
-    Client
-};
 use rsa::{
     RsaPrivateKey,
     pkcs8::DecodePrivateKey,

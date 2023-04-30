@@ -6,6 +6,7 @@ use rsa::{
     pkcs8::DecodePublicKey,
 };
 use aes_gcm_siv::{
+    aead::Aead,
     Aes256GcmSiv,
     Nonce,
     KeyInit
@@ -38,6 +39,7 @@ use configuration::{
 };
 
 mod database;
+use database::HostEntries;
 
 lazy_static! {
     static ref CLIENT_PUBLIC_KEY:RwLock<RsaPublicKey> = RwLock::new(RsaPublicKey::from_public_key_pem(&CLIENT_PUBLIC_KEY_PEM).unwrap());
@@ -91,6 +93,34 @@ fn encrypt_with_cpk(data: &[u8], rng: &mut StdRng) -> io::Result<Vec<u8>> {
 
 // ## main functions
 
+enum ClientRequest {
+    Sync,
+    Delete(i64),
+    Get(i64),
+    Uknown,
+}
+
+impl ClientRequest {
+    fn from_str(request: &str) -> Self {
+        if request.starts_with("SYNC") {
+           return  ClientRequest::Sync;
+        }
+        else if request.starts_with("DELETE ") {
+            match request.replace("DELETE ", "").parse::<i64>() {
+                Ok(timestamp) => return ClientRequest::Delete(timestamp),
+                Err(..) => return ClientRequest::Uknown,
+            };
+        }
+        else if request.starts_with("GET ") {
+            match request.replace("GET ", "").parse::<i64>() {
+                Ok(timestamp) => return ClientRequest::Get(timestamp),
+                Err(..) => return ClientRequest::Uknown,
+            };
+        }
+        ClientRequest::Uknown
+    }
+}
+
 async fn tcp_listener(address: &str, port: u16) {
     loop {
         let listener : TcpListener = match TcpListener::bind(&format!("{}:{}", address, port)).await {
@@ -138,6 +168,28 @@ async fn handle_client(mut stream: TcpStream) -> io::Result<()> {
     };
     simple_log!("[INFO] connection secured with : {:?}", stream.peer_addr().unwrap_or(SocketAddr::from(SocketAddrV4::new(Ipv4Addr::new(0, 0, 0, 0), 0))));
     
+    // 12 bytes for the nonce, 16*100 bytes for the encrypted data
+    loop {
+        let mut command_buffer : Vec<u8> = vec![0; 1612];
+        match stream.read(&mut command_buffer).await {
+            Ok(..) => (),
+            Err(error) => {
+                simple_log!("[WARNING] failed reading from stream : {}", error);
+                continue;
+            },
+        };
+        let nonce = Nonce::clone_from_slice(&command_buffer[0..12]);
+        let data: Vec<u8> = match cipher.decrypt(&nonce, &command_buffer[12..]) {
+            Ok(data) => data,
+            Err(error) => {
+                simple_log!("[WARNING] failed decrypting stream data : {}", error);
+                continue;
+            },
+        };
+        let data: String = String::from_utf8_lossy(&data).trim().trim_end_matches(char::from(0)).to_string();
+        println!("{}", data);
+    }
+
     // always create a new different nonce and send it alongside your message
     let nonce = {
         let mut nonce_slice: [u8; 12] = [0; 12]; rng.fill_bytes(&mut nonce_slice);
@@ -157,7 +209,10 @@ async fn main() {
     simple_log!("\n\n[INFO][{}] start of a new Laptev instance", tstamp());
     tokio::spawn(async move {tcp_listener(DEFAULT_ADDRESS, DEFAULT_PORT).await});
     loop {
-        // time heals all wounds
-        sleep(Duration::from_secs(5)).await;
+        // cleans anything older than 3 days
+        HostEntries::clean_older_than(259200);
+        // sleeps for an hour before cleaning again
+        // maybe check out "interval" as suggested by the docs
+        sleep(Duration::from_secs(3600)).await;
     }
 }
