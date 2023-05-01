@@ -48,7 +48,7 @@ lazy_static! {
 }
 
 use iced::{
-    widget::{button, column, text_input, text, image, Image, container},
+    widget::{button, column, text_input, text, image, Image, container, horizontal_rule, rule},
     alignment,
     Application,
     Theme,
@@ -305,12 +305,14 @@ impl Application for Laptev {
                     text("...")
                         .horizontal_alignment(alignment::Horizontal::Center)
                         .vertical_alignment(alignment::Vertical::Center),
+                    horizontal_rule(1)
+                        .style(iced::theme::Rule::Custom(Box::new(HorizontalRuleCustomStyle)))
                 ]
                 .align_items(alignment::Alignment::Center)
-                .padding([20, 63])
+                .padding(20)
                 .spacing(10)
                 .into()
-            }
+            },
             Mode::Connected(_, state) => {
                 match state {
                     ConnectedState::Syncing => {
@@ -324,9 +326,11 @@ impl Application for Laptev {
                             text("...")
                                 .horizontal_alignment(alignment::Horizontal::Center)
                                 .vertical_alignment(alignment::Vertical::Center),
+                            horizontal_rule(1)
+                                .style(iced::theme::Rule::Custom(Box::new(HorizontalRuleCustomStyle))),
                         ]
                         .align_items(alignment::Alignment::Center)
-                        .padding([20, 63])
+                        .padding(20)
                         .spacing(10)
                         .into()
                     },
@@ -339,11 +343,14 @@ impl Application for Laptev {
                                 .on_press(Message::Disconnect)
                                 .padding(5)
                                 .width(100),
-                        ].into()
-                    }
+                        ]
+                        .align_items(alignment::Alignment::Center)
+                        .padding(20)
+                        .spacing(10)
+                        .into()
+                    },
                 }
-
-            }
+            },
         }
     }
 }
@@ -380,4 +387,14 @@ async fn main() -> iced::Result {
         ..Default::default()
     };
     Laptev::run(settings)
+}
+
+
+struct HorizontalRuleCustomStyle;
+
+impl rule::StyleSheet for HorizontalRuleCustomStyle {
+    type Style = Theme;
+    fn appearance(&self, style: &Self::Style) -> rule::Appearance {
+        rule::Appearance { color: color!(229, 241, 237), width: 1, radius: 0.0, fill_mode: rule::FillMode::Full }
+    }
 }
