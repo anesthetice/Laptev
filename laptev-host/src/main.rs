@@ -211,13 +211,14 @@ async fn handle_client(mut stream: TcpStream) -> io::Result<()> {
                     let mut nonce_slice: [u8; 12] = [0; 12]; rng.fill_bytes(&mut nonce_slice);
                     Nonce::clone_from_slice(&nonce_slice)
                 };
-                let data = match cipher.encrypt(&nonce, data.as_ref()) {
+                let mut data = match cipher.encrypt(&nonce, data.as_ref()) {
                     Ok(data) => data,
                     Err(error) => {
                         simple_log!("[WARNING] failed to encrypt HostEntries : {}", error);
                         continue;
                     },
                 };
+                data.extend("LAPTEV HOST -- DONE SENDING DATA -- LAPTEV HOST".as_bytes());
                 match stream.write_all(&nonce).await {
                     Ok(..) => {
                         stream.flush().await;

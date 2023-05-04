@@ -124,7 +124,7 @@ impl Connection {
 
         return Some(Arc::new(Mutex::new(Self{stream, rng, cipher,})));
     }
-    async fn send_command(arc_mutex_self: Arc<Mutex<Self>>, command: String) -> () {
+    async fn process_and_send(arc_mutex_self: Arc<Mutex<Self>>, command: String) -> io::Result<()> {
         let mut conn_self = arc_mutex_self.lock().await;
         let nonce = {
             let mut nonce_slice: [u8; 12] = [0; 12]; conn_self.rng.fill_bytes(&mut nonce_slice);
@@ -136,25 +136,42 @@ impl Connection {
             while command.len() < 1584 {command.push(0)}
         }
         else if command.len() > 1584 {
-            eprintln!("[WARNING] command is too large");
-            return;
+            return Err(io::Error::new(io::ErrorKind::InvalidInput, "[WARNING] command is too large"));
         }
         let mut encrypted_command: Vec<u8> = match conn_self.cipher.encrypt(&nonce, command.as_ref()) {
             Ok(enc_command) => enc_command,
             Err(error) => {
-                eprintln!("[WARNING] failed to encrypt command : {}", error);
-                return;
+                return Err(io::Error::new(io::ErrorKind::Other,"[WARNING] failed to encrypt command"))
             },
         };
 
         nonce.into_iter().rev().for_each(|byte| {encrypted_command.insert(0, byte)});
         println!("{}", encrypted_command.len());
         if encrypted_command.len() == 1612 {
-            match conn_self.stream.write_all(&encrypted_command).await {
-                Ok(..) => {conn_self.stream.flush().await;},
-                Err(error) => eprintln!("[WARNING] failed to send command : {}", error),
+            conn_self.stream.write_all(&encrypted_command).await?;
+            conn_self.stream.flush().await?;
+        }
+        return Ok(());
+    }
+
+    async fn sync_with_host(arc_mutex_self: Arc<Mutex<Self>>) -> () {
+        match Self::process_and_send(arc_mutex_self.clone(), "SYNC".to_string()).await {
+            Ok(()) => {},
+            Err(error) => {
+                eprintln!("{}", error);
+                return;
             }
         }
+
+        let mut conn_self = arc_mutex_self.lock().await;
+
+        let mut nonce_buffer: [u8; 12] = [0; 12];
+        conn_self.stream.read(&mut nonce_buffer).await;
+        let nonce: Nonce = Nonce::clone_from_slice(&nonce_buffer);
+
+        
+
+
     }
 }
 
@@ -173,7 +190,6 @@ enum Mode {
 
 struct Laptev {
     address: String,
-    custom_command: String,
     mode: Mode,
     recordings: ClientEntries, 
 }
@@ -183,7 +199,6 @@ impl Laptev {
         return Laptev {
             address: ADDRESS.to_string(),
             mode: Mode::Disconnected,
-            custom_command: String::new(),
             recordings: ClientEntries::default(),
         };
     }
@@ -233,11 +248,13 @@ impl Application for Laptev {
                 Command::single(Action::Window(WindowAction::Resize { width: 300, height: 400 }))
             },
             Message::ConnectionAttempt(attempt) => {
-                match attempt {
+                match &attempt {
                     Some(connection_arc_mutex) => {
-                        self.mode = Mode::Connected(connection_arc_mutex, ConnectedState::Syncing);
-                        Command::single(Action::Window(WindowAction::Resize { width: 1280, height: 720 }))
-                        // add batch command to sync with server
+                        self.mode = Mode::Connected(connection_arc_mutex.clone(), ConnectedState::Syncing);
+                        Command::batch([
+                            Command::single(Action::Window(WindowAction::Resize { width: 1280, height: 720 })),
+                            Command::perform(Connection::sync_with_host(connection_arc_mutex.clone()), Message::Blank)
+                            ])
                     },
                     None => {
                         self.mode = Mode::Disconnected;
@@ -299,7 +316,7 @@ impl Application for Laptev {
                     image("./res/icon-clear.png")
                         .width(175)
                         .height(175),
-                    text("conecting")
+                    text("connecting")
                         .horizontal_alignment(alignment::Horizontal::Center)
                         .vertical_alignment(alignment::Vertical::Center),
                     text("...")
@@ -390,8 +407,8 @@ async fn main() -> iced::Result {
 }
 
 
+// "invisible" horizontal line so that the center alignment works correctly
 struct HorizontalRuleCustomStyle;
-
 impl rule::StyleSheet for HorizontalRuleCustomStyle {
     type Style = Theme;
     fn appearance(&self, style: &Self::Style) -> rule::Appearance {
