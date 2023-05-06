@@ -142,6 +142,14 @@ impl ClientRequest {
     }
 }
 
+async fn send_large_data(mut stream: TcpStream, nonce: &[u8; 12], data_name: &[u8], data: &[u8]) -> io::Result<TcpStream> {
+    stream.write_all(nonce).await?;
+    stream.write_all(data_name).await?;
+    stream.write_all(&data.len().to_be_bytes()).await?;
+    stream.write_all(&data);
+    return Ok(stream);
+}
+
 async fn handle_client(mut stream: TcpStream) -> io::Result<()> {
     let mut rng: StdRng = StdRng::from_entropy();
     // authentication using RSA
@@ -207,6 +215,7 @@ async fn handle_client(mut stream: TcpStream) -> io::Result<()> {
                     Some(data) => data.into_json_bytes().await,
                     None => continue,
                 };
+                println!("JSON DATA : {:?}", data);
                 let nonce = {
                     let mut nonce_slice: [u8; 12] = [0; 12]; rng.fill_bytes(&mut nonce_slice);
                     Nonce::clone_from_slice(&nonce_slice)
@@ -218,25 +227,18 @@ async fn handle_client(mut stream: TcpStream) -> io::Result<()> {
                         continue;
                     },
                 };
-                data.extend("LAPTEV HOST -- DONE SENDING DATA -- LAPTEV HOST".as_bytes());
-                match stream.write_all(&nonce).await {
-                    Ok(..) => {
-                        stream.flush().await;
-                    },
-                    Err(error) => {
-                        simple_log!("[WARNING] failed to write nonce to stream");
-                        continue;
-                    }
-                }
-                match stream.write_all(&data).await {
-                    Ok(..) => {
-                        stream.flush().await;
-                    },
-                    Err(error) => {
-                        simple_log!("[WARNING] failed to write nonce to stream");
-                        continue;
-                    }
-                }
+                stream.write_all(&nonce).await.unwrap();
+                stream.flush().await.unwrap();
+                println!("a");
+                stream.write_all(b"sync data").await.unwrap();
+                stream.flush().await.unwrap();
+                println!("b");
+                stream.write_all(&data.len().to_be_bytes()).await.unwrap();
+                stream.flush().await.unwrap();
+                println!("c");
+                stream.write_all(&data).await.unwrap();
+                stream.flush().await.unwrap();
+                println!("d");
             },
             ClientRequest::Get(timestamp) => {
 
