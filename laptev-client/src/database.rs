@@ -1,10 +1,10 @@
 // not really a database, but I can't find a better name for this
 use iced::{
-    widget::{row, image, button, text, Text},
+    alignment,
+    widget::{row, image, button, text, column},
     Element,
     theme,
 };
-
 use serde::{Serialize, Deserialize};
 use serde_json;
 use time::OffsetDateTime;
@@ -29,6 +29,13 @@ impl ClientEntries {
     pub fn clear(&mut self) {
         self.0.clear();
     }
+    pub fn to_column(&self) -> Element<crate::Message> {
+        let mut Col = iced_native::widget::column::Column::new();
+        for entry in self.0.iter() {
+            Col = Col.push(entry.to_row());
+        }
+        return Col.into();
+    }
 }
 
 struct ClientEntry {
@@ -47,14 +54,25 @@ impl ClientEntry {
     fn to_row(&self) -> Element<crate::Message> {
         row![
             image(self.thumbnail.clone())
-                .width(400)
-                .height(300),
+                .width(140)
+                .height(105),
             // could use the format method but I don't want to deal with error handling for that
-            text(format!("{:0>2}/{:0>2}/{} - {:0>2}:{:0>2}:{:0>2}", self.timestamp.day(), self.timestamp.month() as u8, self.timestamp.day(), self.timestamp.hour(), self.timestamp.minute(), self.timestamp.second())),
-            button(text(format!("{} Delete", '\u{2326}')))
+            text(format!("{:0>2}/{:0>2}/{} - {:0>2}:{:0>2}:{:0>2}", self.timestamp.day(), self.timestamp.month() as u8, self.timestamp.year(), self.timestamp.hour(), self.timestamp.minute(), self.timestamp.second()))
+                .vertical_alignment(alignment::Vertical::Center)
+                .horizontal_alignment(alignment::Horizontal::Center),
+            button(text("download"))
+                .on_press(crate::Message::GetCommand(self.timestamp.unix_timestamp()))
                 .padding(10)
-                .style(theme::Button::Destructive)
-        ].into()
+                .style(theme::Button::Positive),
+            button(text("delete"))
+                .on_press(crate::Message::DelCommand(self.timestamp.unix_timestamp()))
+                .padding(10)
+                .style(theme::Button::Destructive),
+        ]
+        .align_items(alignment::Alignment::Center)
+        .padding(10)
+        .spacing(20)
+        .into()
     }
 }
 
@@ -74,6 +92,13 @@ impl FromIterator<HostEntry> for HostEntries {
     }
 
 }
+
+impl HostEntries {
+    pub fn new_empty() -> Self {
+        return Self(Vec::new());
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 struct HostEntry {
     timestamp: i64,

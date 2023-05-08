@@ -40,7 +40,10 @@ use configuration::{
 };
 
 mod database;
-use database::ClientEntries;
+use database::{
+    ClientEntries,
+    HostEntries,
+};
 
 lazy_static! {
     pub static ref CLIENT_PRIVATE_KEY: RsaPrivateKey = RsaPrivateKey::from_pkcs8_pem(&CLIENT_PRIVATE_KEY_PEM).unwrap();
@@ -48,7 +51,7 @@ lazy_static! {
 }
 
 use iced::{
-    widget::{button, column, text_input, text, image, Image, container, horizontal_rule, rule},
+    widget::{button, column, text_input, text, image, row, container, horizontal_rule, rule, scrollable},
     alignment,
     Application,
     Theme,
@@ -61,34 +64,6 @@ use iced::{
 use iced_futures::backend::native::tokio as tokio_iced;
 use iced_native::command::Action;
 use iced_native::window::Action as WindowAction;
-
-enum ClientRequest {
-    Sync,
-    Delete(i64),
-    Get(i64),
-    Uknown,
-}
-
-impl ClientRequest {
-    fn from_str(request: &str) -> Self {
-        if request.starts_with("SYNC") {
-           return  ClientRequest::Sync;
-        }
-        else if request.starts_with("DELETE ") {
-            match request.replace("DELETE ", "").parse::<i64>() {
-                Ok(timestamp) => return ClientRequest::Delete(timestamp),
-                Err(..) => return ClientRequest::Uknown,
-            };
-        }
-        else if request.starts_with("GET ") {
-            match request.replace("GET ", "").parse::<i64>() {
-                Ok(timestamp) => return ClientRequest::Get(timestamp),
-                Err(..) => return ClientRequest::Uknown,
-            };
-        }
-        ClientRequest::Uknown
-    }
-}
 
 pub struct Connection {
     stream: TcpStream,
@@ -146,7 +121,6 @@ impl Connection {
         };
 
         nonce.into_iter().rev().for_each(|byte| {encrypted_command.insert(0, byte)});
-        println!("{}", encrypted_command.len());
         if encrypted_command.len() == 1612 {
             conn_self.stream.write_all(&encrypted_command).await?;
             conn_self.stream.flush().await?;
@@ -154,24 +128,45 @@ impl Connection {
         return Ok(());
     }
 
-    async fn sync_with_host(arc_mutex_self: Arc<Mutex<Self>>) -> () {
+    async fn sync_with_host(arc_mutex_self: Arc<Mutex<Self>>) -> Vec<u8> {
         match Self::process_and_send(arc_mutex_self.clone(), "SYNC".to_string()).await {
             Ok(()) => {},
             Err(error) => {
                 eprintln!("{}", error);
-                return;
+                return Vec::new();
             }
         }
 
         let mut conn_self = arc_mutex_self.lock().await;
 
-        let mut nonce_buffer: [u8; 12] = [0; 12];
-        conn_self.stream.read(&mut nonce_buffer).await;
-        let nonce: Nonce = Nonce::clone_from_slice(&nonce_buffer);
+        // receives the 12-bit nonce from client
+        let mut buffer: [u8; 12] = [0; 12];
+        conn_self.stream.read(&mut buffer).await.unwrap();
+        let nonce: Nonce = Nonce::clone_from_slice(&buffer);
 
+        let mut buffer: [u8; 1024] = [0; 1024];
+        conn_self.stream.read(&mut buffer).await.unwrap();
         
+        let mut buffer : [u8; 8] = [0; 8];
+        conn_self.stream.read(&mut buffer).await.unwrap();
+        let data_length: usize = usize::from_be_bytes(buffer);
 
+        let mut encrypted_json_data: Vec<u8> = Vec::new();
+        while encrypted_json_data.len() < data_length {
+            let mut buffer: [u8; 8192] = [0; 8192];
+            conn_self.stream.read(&mut buffer).await.unwrap();
+            encrypted_json_data.extend(buffer);
+        }
+        encrypted_json_data.truncate(data_length);
 
+        let json_data: Vec<u8> = match conn_self.cipher.decrypt(&nonce, encrypted_json_data.as_ref()) {
+            Ok(data) => data,
+            Err(error) => {
+                eprintln!("[WARNING] failed to decrypt synchronization data");
+                return Vec::new();
+            }, 
+        };
+        return json_data;
     }
 }
 
@@ -181,7 +176,7 @@ enum ConnectedState {
     Syncing
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 enum Mode {
     Disconnected,
     AttemptingConnection,
@@ -252,8 +247,8 @@ impl Application for Laptev {
                     Some(connection_arc_mutex) => {
                         self.mode = Mode::Connected(connection_arc_mutex.clone(), ConnectedState::Syncing);
                         Command::batch([
-                            Command::single(Action::Window(WindowAction::Resize { width: 1280, height: 720 })),
-                            Command::perform(Connection::sync_with_host(connection_arc_mutex.clone()), Message::Blank)
+                            Command::single(Action::Window(WindowAction::Resize { width: 600, height: 720 })),
+                            Command::perform(Connection::sync_with_host(connection_arc_mutex.clone()), Message::SyncDone),
                             ])
                     },
                     None => {
@@ -263,13 +258,19 @@ impl Application for Laptev {
                 }
                 
             },
-
             Message::SyncWithHost => {
-                Command::none()
+                match self.mode.clone() {
+                    Mode::Connected(connection_arc_mutex, _) => {
+                        self.mode = Mode::Connected(connection_arc_mutex.clone(), ConnectedState::Syncing);
+                        Command::perform(Connection::sync_with_host(connection_arc_mutex.clone()), Message::SyncDone)
+                    },
+                    _ => Command::none(),
+                }
             },
-            Message::SyncDone => {
+            Message::SyncDone(data) => {
                 match &self.mode {
                     Mode::Connected(connection, _) => {
+                        self.recordings = ClientEntries::from_host_entries(serde_json::from_slice::<HostEntries>(&data).unwrap_or(HostEntries::new_empty()));
                         self.mode = Mode::Connected(connection.clone(), ConnectedState::Synced);
                     },
                     _ => {},
@@ -352,14 +353,31 @@ impl Application for Laptev {
                         .into()
                     },
                     ConnectedState::Synced => {
+                        let content = self.recordings.to_column();
+
+
                         column![
-                            button(text("synchronize with server").horizontal_alignment(alignment::Horizontal::Center))
-                                .on_press(Message::SyncWithHost),
+                            row![
+                                button(text("synchronize").horizontal_alignment(alignment::Horizontal::Center))
+                                    .on_press(Message::SyncWithHost)
+                                    .padding(5),
+
+                                image("./res/icon-clear.png")
+                                    .width(75)
+                                    .height(75),
         
-                            button(text("disconnect").horizontal_alignment(alignment::Horizontal::Center))
-                                .on_press(Message::Disconnect)
-                                .padding(5)
-                                .width(100),
+                                button(text("disconnect").horizontal_alignment(alignment::Horizontal::Center))
+                                    .on_press(Message::Disconnect)
+                                    .padding(5),
+                            ]
+                            .padding(10)
+                            .spacing(20)
+                            .align_items(alignment::Alignment::Center),
+
+                            horizontal_rule(1)
+                                .style(iced::theme::Rule::Custom(Box::new(HorizontalRuleCustomStyle))),
+
+                            scrollable(container(content).width(iced::Length::Fill).center_x())
                         ]
                         .align_items(alignment::Alignment::Center)
                         .padding(20)
@@ -381,7 +399,7 @@ pub enum Message {
     ConnectionAttempt(Option<Arc<Mutex<Connection>>>),
 
     SyncWithHost,
-    SyncDone,
+    SyncDone(Vec<u8>),
     GetCommand(i64),
     DelCommand(i64),
 

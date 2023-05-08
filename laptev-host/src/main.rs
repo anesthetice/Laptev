@@ -215,30 +215,28 @@ async fn handle_client(mut stream: TcpStream) -> io::Result<()> {
                     Some(data) => data.into_json_bytes().await,
                     None => continue,
                 };
-                println!("JSON DATA : {:?}", data);
                 let nonce = {
                     let mut nonce_slice: [u8; 12] = [0; 12]; rng.fill_bytes(&mut nonce_slice);
                     Nonce::clone_from_slice(&nonce_slice)
                 };
-                let mut data = match cipher.encrypt(&nonce, data.as_ref()) {
+                let data = match cipher.encrypt(&nonce, data.as_ref()) {
                     Ok(data) => data,
                     Err(error) => {
                         simple_log!("[WARNING] failed to encrypt HostEntries : {}", error);
                         continue;
                     },
                 };
-                stream.write_all(&nonce).await.unwrap();
-                stream.flush().await.unwrap();
-                println!("a");
-                stream.write_all(b"sync data").await.unwrap();
-                stream.flush().await.unwrap();
-                println!("b");
-                stream.write_all(&data.len().to_be_bytes()).await.unwrap();
-                stream.flush().await.unwrap();
-                println!("c");
-                stream.write_all(&data).await.unwrap();
-                stream.flush().await.unwrap();
-                println!("d");
+                stream.write_all(&nonce).await;
+                stream.flush().await;
+                sleep(Duration::from_secs_f64(0.05)).await;
+                stream.write_all(b"synchronize").await;
+                stream.flush().await;
+                sleep(Duration::from_secs_f64(0.05)).await;
+                stream.write_all(&data.len().to_be_bytes()).await;
+                stream.flush().await;
+                sleep(Duration::from_secs_f64(0.05)).await;
+                stream.write_all(&data).await;
+                stream.flush().await;
             },
             ClientRequest::Get(timestamp) => {
 
@@ -248,18 +246,7 @@ async fn handle_client(mut stream: TcpStream) -> io::Result<()> {
             },
             ClientRequest::Uknown => (),
         }
-    }
-
-    // always create a new different nonce and send it alongside your message
-    let nonce = {
-        let mut nonce_slice: [u8; 12] = [0; 12]; rng.fill_bytes(&mut nonce_slice);
-        Nonce::clone_from_slice(&nonce_slice)
-    };
-
-    // message structure
-    // repeat-byte (0 or 1), 12-bytes nonce, 16*x bytes message (AES compability)
-    
-    return Ok(());
+    }    
 }
 
 #[tokio::main]
@@ -270,7 +257,7 @@ async fn main() {
     tokio::spawn(async move {tcp_listener(DEFAULT_ADDRESS, DEFAULT_PORT).await});
     loop {
         // cleans anything older than 3 days
-        HostEntries::clean_older_than(259200);
+        HostEntries::clean_older_than(259200).await;
         // sleeps for an hour before cleaning again
         // maybe check out "interval" as suggested by the docs
         sleep(Duration::from_secs(3600)).await;
