@@ -51,6 +51,7 @@ lazy_static! {
 }
 
 use iced::{
+    theme,
     widget::{button, column, text_input, text, image, row, container, horizontal_rule, rule, scrollable},
     alignment,
     Application,
@@ -99,7 +100,7 @@ impl Connection {
 
         return Some(Arc::new(Mutex::new(Self{stream, rng, cipher,})));
     }
-    async fn process_and_send(arc_mutex_self: Arc<Mutex<Self>>, command: String) -> io::Result<()> {
+    async fn process_and_send(arc_mutex_self: Arc<Mutex<Self>>, command: String) -> () {
         let mut conn_self = arc_mutex_self.lock().await;
         let nonce = {
             let mut nonce_slice: [u8; 12] = [0; 12]; conn_self.rng.fill_bytes(&mut nonce_slice);
@@ -111,50 +112,46 @@ impl Connection {
             while command.len() < 1584 {command.push(0)}
         }
         else if command.len() > 1584 {
-            return Err(io::Error::new(io::ErrorKind::InvalidInput, "[WARNING] command is too large"));
+            eprintln!("[WARNING] command is too large");
+            return;
         }
         let mut encrypted_command: Vec<u8> = match conn_self.cipher.encrypt(&nonce, command.as_ref()) {
             Ok(enc_command) => enc_command,
             Err(error) => {
-                return Err(io::Error::new(io::ErrorKind::Other,"[WARNING] failed to encrypt command"))
+                eprintln!("[WARNING] failed to encrypt command");
+                return;
             },
         };
 
         nonce.into_iter().rev().for_each(|byte| {encrypted_command.insert(0, byte)});
         if encrypted_command.len() == 1612 {
-            conn_self.stream.write_all(&encrypted_command).await?;
-            conn_self.stream.flush().await?;
-        }
-        return Ok(());
+            conn_self.stream.write_all(&encrypted_command).await;
+            conn_self.stream.flush().await;
+        };
     }
 
     async fn sync_with_host(arc_mutex_self: Arc<Mutex<Self>>) -> Vec<u8> {
-        match Self::process_and_send(arc_mutex_self.clone(), "SYNC".to_string()).await {
-            Ok(()) => {},
-            Err(error) => {
-                eprintln!("{}", error);
-                return Vec::new();
-            }
-        }
+        
+        Self::process_and_send(arc_mutex_self.clone(), "SYNC".to_string());
 
         let mut conn_self = arc_mutex_self.lock().await;
 
         // receives the 12-bit nonce from client
         let mut buffer: [u8; 12] = [0; 12];
-        conn_self.stream.read(&mut buffer).await.unwrap();
+        conn_self.stream.read(&mut buffer).await;
         let nonce: Nonce = Nonce::clone_from_slice(&buffer);
 
         let mut buffer: [u8; 1024] = [0; 1024];
-        conn_self.stream.read(&mut buffer).await.unwrap();
+        conn_self.stream.read(&mut buffer).await;
         
         let mut buffer : [u8; 8] = [0; 8];
-        conn_self.stream.read(&mut buffer).await.unwrap();
+        conn_self.stream.read(&mut buffer).await;
         let data_length: usize = usize::from_be_bytes(buffer);
 
         let mut encrypted_json_data: Vec<u8> = Vec::new();
         while encrypted_json_data.len() < data_length {
             let mut buffer: [u8; 8192] = [0; 8192];
-            conn_self.stream.read(&mut buffer).await.unwrap();
+            conn_self.stream.read(&mut buffer).await;
             encrypted_json_data.extend(buffer);
         }
         encrypted_json_data.truncate(data_length);
@@ -230,7 +227,6 @@ impl Application for Laptev {
                 self.address = string;
                 Command::none()
             },
-
             Message::Connect => {
                 self.mode = Mode::AttemptingConnection;
                 let address_clone: String = self.address.clone();
@@ -247,7 +243,7 @@ impl Application for Laptev {
                     Some(connection_arc_mutex) => {
                         self.mode = Mode::Connected(connection_arc_mutex.clone(), ConnectedState::Syncing);
                         Command::batch([
-                            Command::single(Action::Window(WindowAction::Resize { width: 600, height: 720 })),
+                            Command::single(Action::Window(WindowAction::Resize { width: 650, height: 720 })),
                             Command::perform(Connection::sync_with_host(connection_arc_mutex.clone()), Message::SyncDone),
                             ])
                     },
@@ -277,12 +273,26 @@ impl Application for Laptev {
                 }
                 Command::none()
             },
-
+            Message::CancelSync => {
+                match &self.mode {
+                    Mode::Connected(connection, _) => {
+                        self.mode = Mode::Connected(connection.clone(), ConnectedState::Synced);
+                    },
+                    _ => {},
+                }
+                Command::none()
+            },
             Message::GetCommand(timestamp) => {
                 Command::none()
             },
             Message::DelCommand(timestamp) => {
-                Command::none()
+                match self.mode.clone() {
+                    Mode::Connected(connection_arc_mutex, _) => {
+                        self.mode = Mode::Connected(connection_arc_mutex.clone(), ConnectedState::Syncing);
+                        Command::perform(Connection::process_and_send(connection_arc_mutex.clone(), format!("DELETE {}", timestamp)), Message::Blank)
+                    },
+                    _ => Command::none(),
+                }
             },
             Message::Blank(()) => {
                 Command::none()
@@ -323,6 +333,10 @@ impl Application for Laptev {
                     text("...")
                         .horizontal_alignment(alignment::Horizontal::Center)
                         .vertical_alignment(alignment::Vertical::Center),
+                    button(text("cancel"))
+                        .on_press(Message::Disconnect)
+                        .padding(10)
+                        .style(theme::Button::Destructive),
                     horizontal_rule(1)
                         .style(iced::theme::Rule::Custom(Box::new(HorizontalRuleCustomStyle)))
                 ]
@@ -344,6 +358,10 @@ impl Application for Laptev {
                             text("...")
                                 .horizontal_alignment(alignment::Horizontal::Center)
                                 .vertical_alignment(alignment::Vertical::Center),
+                            button(text("cancel"))
+                                .on_press(Message::CancelSync)
+                                .padding(10)
+                                .style(theme::Button::Destructive),
                             horizontal_rule(1)
                                 .style(iced::theme::Rule::Custom(Box::new(HorizontalRuleCustomStyle))),
                         ]
@@ -354,8 +372,6 @@ impl Application for Laptev {
                     },
                     ConnectedState::Synced => {
                         let content = self.recordings.to_column();
-
-
                         column![
                             row![
                                 button(text("synchronize").horizontal_alignment(alignment::Horizontal::Center))
@@ -400,6 +416,8 @@ pub enum Message {
 
     SyncWithHost,
     SyncDone(Vec<u8>),
+    CancelSync,
+
     GetCommand(i64),
     DelCommand(i64),
 

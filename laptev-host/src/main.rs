@@ -14,7 +14,7 @@ use aes_gcm_siv::{
 use tokio::{
     net::{TcpStream, TcpListener},
     io::{AsyncWriteExt, AsyncReadExt},
-    time::{sleep, Duration},
+    time::{sleep, Duration}, fs::OpenOptions,
 };
 use rand::{
     rngs::StdRng,
@@ -142,14 +142,6 @@ impl ClientRequest {
     }
 }
 
-async fn send_large_data(mut stream: TcpStream, nonce: &[u8; 12], data_name: &[u8], data: &[u8]) -> io::Result<TcpStream> {
-    stream.write_all(nonce).await?;
-    stream.write_all(data_name).await?;
-    stream.write_all(&data.len().to_be_bytes()).await?;
-    stream.write_all(&data);
-    return Ok(stream);
-}
-
 async fn handle_client(mut stream: TcpStream) -> io::Result<()> {
     let mut rng: StdRng = StdRng::from_entropy();
     // authentication using RSA
@@ -239,10 +231,38 @@ async fn handle_client(mut stream: TcpStream) -> io::Result<()> {
                 stream.flush().await;
             },
             ClientRequest::Get(timestamp) => {
-
+                let data = match HostEntries::get_video_file_data(timestamp).await {
+                    Ok(data) => data,
+                    Err(error) => {
+                        simple_log!("[WARNING] failed to get video file");
+                        continue;
+                    }
+                };
+                let nonce = {
+                    let mut nonce_slice: [u8; 12] = [0; 12]; rng.fill_bytes(&mut nonce_slice);
+                    Nonce::clone_from_slice(&nonce_slice)
+                };
+                let data = match cipher.encrypt(&nonce, data.as_ref()) {
+                    Ok(data) => data,
+                    Err(error) => {
+                        simple_log!("[WARNING] failed to encrypt HostEntries : {}", error);
+                        continue;
+                    },
+                };
+                stream.write_all(&nonce).await;
+                stream.flush().await;
+                sleep(Duration::from_secs_f64(0.05)).await;
+                stream.write_all(b"video file").await;
+                stream.flush().await;
+                sleep(Duration::from_secs_f64(0.05)).await;
+                stream.write_all(&data.len().to_be_bytes()).await;
+                stream.flush().await;
+                sleep(Duration::from_secs_f64(0.05)).await;
+                stream.write_all(&data).await;
+                stream.flush().await;
             },
             ClientRequest::Delete(timestamp) => {
-
+                HostEntries::delete(timestamp);
             },
             ClientRequest::Uknown => (),
         }

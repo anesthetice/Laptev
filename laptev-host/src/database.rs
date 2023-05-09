@@ -11,7 +11,8 @@ use std::{
     iter::FromIterator,
 };
 use tokio::{
-    fs,
+    fs::{self, OpenOptions},
+    io::{self, AsyncReadExt},
 };
 
 #[derive(PartialEq)]
@@ -165,6 +166,16 @@ impl HostEntries {
                 Vec::new()
             },
         }
+    }
+    pub async fn get_video_file_data(timestamp: i64) -> io::Result<Vec<u8>> {
+        let mut data: Vec<u8> = Vec::new();
+        let mut file = OpenOptions::new()
+            .create(false)
+            .read(true)
+            .open(format!("./data/{}.h264", timestamp))
+            .await?;
+        file.read(&mut data).await;
+        return Ok(data);
     }
 }
 
