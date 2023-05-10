@@ -174,7 +174,7 @@ impl HostEntries {
             .read(true)
             .open(format!("./data/{}.h264", timestamp))
             .await?;
-        file.read(&mut data).await;
+        file.read_to_end(&mut data).await?;
         return Ok(data);
     }
 }

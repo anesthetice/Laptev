@@ -245,7 +245,7 @@ async fn handle_client(mut stream: TcpStream) -> io::Result<()> {
                 let data = match cipher.encrypt(&nonce, data.as_ref()) {
                     Ok(data) => data,
                     Err(error) => {
-                        simple_log!("[WARNING] failed to encrypt HostEntries : {}", error);
+                        simple_log!("[WARNING] failed to encrypt video data : {}", error);
                         continue;
                     },
                 };
@@ -262,7 +262,7 @@ async fn handle_client(mut stream: TcpStream) -> io::Result<()> {
                 stream.flush().await;
             },
             ClientRequest::Delete(timestamp) => {
-                HostEntries::delete(timestamp);
+                HostEntries::delete(timestamp).await;
             },
             ClientRequest::Uknown => (),
         }
