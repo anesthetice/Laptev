@@ -4,3 +4,5 @@
 /archives
 laptev-host/data
 laptev-host/laptev-host.log
+laptev-client/downloads
+laptev-client/default_address.config

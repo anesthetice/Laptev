@@ -15,7 +15,7 @@ use tokio::{
         AsyncWriteExt,
         AsyncReadExt,
     },
-    sync::Mutex,
+    sync::Mutex, fs::OpenOptions,
 };
 use rand::{
     rngs::StdRng,
@@ -28,16 +28,13 @@ use lazy_static::{
 };
 use time::UtcOffset;
 use std::{
-    io,
+    io::{self, Read},
     sync::Arc,
     fmt::Debug,
 };
 
 mod configuration;
-use configuration::{
-    CLIENT_PRIVATE_KEY_PEM,
-    ADDRESS,
-};
+use configuration::CLIENT_PRIVATE_KEY_PEM;
 
 mod database;
 use database::{
@@ -129,14 +126,10 @@ impl Connection {
             conn_self.stream.flush().await;
         };
     }
-
     async fn sync_with_host(arc_mutex_self: Arc<Mutex<Self>>) -> Vec<u8> {
-        
-        Self::process_and_send(arc_mutex_self.clone(), "SYNC".to_string());
-
+        Self::process_and_send(arc_mutex_self.clone(), "SYNC".to_string()).await;
         let mut conn_self = arc_mutex_self.lock().await;
 
-        // receives the 12-bit nonce from client
         let mut buffer: [u8; 12] = [0; 12];
         conn_self.stream.read(&mut buffer).await;
         let nonce: Nonce = Nonce::clone_from_slice(&buffer);
@@ -165,6 +158,54 @@ impl Connection {
         };
         return json_data;
     }
+    async fn get(arc_mutex_self: Arc<Mutex<Self>>, timestamp: i64) -> () {
+        Self::process_and_send(arc_mutex_self.clone(), format!("GET {}", timestamp)).await;
+        let mut conn_self = arc_mutex_self.lock().await;
+
+        let mut buffer: [u8; 12] = [0; 12];
+        conn_self.stream.read(&mut buffer).await;
+        let nonce: Nonce = Nonce::clone_from_slice(&buffer);
+
+        let mut buffer: [u8; 1024] = [0; 1024];
+        conn_self.stream.read(&mut buffer).await;
+        
+        let mut buffer : [u8; 8] = [0; 8];
+        conn_self.stream.read(&mut buffer).await;
+        let data_length: usize = usize::from_be_bytes(buffer);
+
+        let mut encrypted_data: Vec<u8> = Vec::new();
+        while encrypted_data.len() < data_length {
+            let mut buffer: [u8; 8192] = [0; 8192];
+            conn_self.stream.read(&mut buffer).await;
+            encrypted_data.extend(buffer);
+        }
+        encrypted_data.truncate(data_length);
+
+        match conn_self.cipher.decrypt(&nonce, encrypted_data.as_ref()) {
+            Ok(data) => {
+                let mut file =  match OpenOptions::new()
+                    .create(true)
+                    .write(true)
+                    .truncate(true)
+                    .open(format!("./downloads/{}.mp4", timestamp))
+                    .await 
+                {
+                    Ok(file) => file,
+                    Err(error) => {
+                        eprintln!("[WARNINING] failed to create a video file to ./downloads : {}", error);
+                        return;
+                    }
+                };
+                match file.write_all(&data).await {
+                    Ok(..) => {},
+                    Err(error) => eprintln!("[WARNINNG] failed to write to video file in ./downloads : {}", error),
+                };
+            },
+            Err(error) => {
+                eprintln!("[WARNING] failed to decrypt video : {}", error);
+            }, 
+        };
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -189,7 +230,7 @@ struct Laptev {
 impl Laptev {
     pub fn default() -> Self {
         return Laptev {
-            address: ADDRESS.to_string(),
+            address: get_default_address(),
             mode: Mode::Disconnected,
             recordings: ClientEntries::default(),
         };
@@ -283,12 +324,18 @@ impl Application for Laptev {
                 Command::none()
             },
             Message::GetCommand(timestamp) => {
-                Command::none()
+                match self.mode.clone() {
+                    Mode::Connected(connection_arc_mutex, _) => {
+                        self.mode = Mode::Connected(connection_arc_mutex.clone(), ConnectedState::Synced);
+                        Command::perform(Connection::get(connection_arc_mutex.clone(), timestamp), Message::Blank)
+                    },
+                    _ => Command::none(),
+                }
             },
             Message::DelCommand(timestamp) => {
                 match self.mode.clone() {
                     Mode::Connected(connection_arc_mutex, _) => {
-                        self.mode = Mode::Connected(connection_arc_mutex.clone(), ConnectedState::Syncing);
+                        self.mode = Mode::Connected(connection_arc_mutex.clone(), ConnectedState::Synced);
                         Command::perform(Connection::process_and_send(connection_arc_mutex.clone(), format!("DELETE {}", timestamp)), Message::Blank)
                     },
                     _ => Command::none(),
@@ -450,4 +497,15 @@ impl rule::StyleSheet for HorizontalRuleCustomStyle {
     fn appearance(&self, style: &Self::Style) -> rule::Appearance {
         rule::Appearance { color: color!(229, 241, 237), width: 1, radius: 0.0, fill_mode: rule::FillMode::Full }
     }
+}
+
+fn get_default_address() -> String {
+    let mut address: String = String::new();
+    match std::fs::OpenOptions::new().read(true).open("default_address.config") {
+        Ok(mut file) => {
+            file.read_to_string(&mut address);
+        },
+        Err(..) => (),
+    }
+    return address;
 }
