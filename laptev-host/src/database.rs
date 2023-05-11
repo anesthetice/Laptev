@@ -1,10 +1,10 @@
 use crate::{
     simple_log,
     LOG_FILE,
-    tstamp,
 };
 use serde::{Serialize, Deserialize};
 use serde_json;
+use time::OffsetDateTime;
 use std::{
     io::Write,
     path::{PathBuf, Path},
@@ -104,13 +104,13 @@ impl HostEntries {
         Some(Self(host_entries))
     }
     pub async fn clean_older_than(seconds: i64) -> () {
-        let current_time: i64 = tstamp();
-        simple_log!("[INFO][{}] cleaning anything older than {} seconds", &current_time, &seconds);
+        let current_time: i64 = OffsetDateTime::now_utc().unix_timestamp();
+        simple_log!("[INFO] cleaning anything older than {} seconds", &seconds);
 
         let paths = match std::fs::read_dir("./data") {
             Ok(paths) => paths,
             Err(error) => {
-                simple_log!("[WARNING] failed to read the data directory: {}", error);
+                simple_log!("[WARNING] failed to read the ./data directory, {}", error);
                 return;
             },
         };
@@ -124,45 +124,24 @@ impl HostEntries {
                     };
                     if (current_time - timestamp) > seconds {
                         match fs::remove_file(&current_path).await {
-                            Ok(..) => {simple_log!("[INFO] removed expired file : {}", HostEntries::get_filename(&current_path));},
-                            Err(error) => {simple_log!("[WARNING] failed to remove expired file : {} due to : {}", HostEntries::get_filename(&current_path), error);}
+                            Ok(..) => {simple_log!("[INFO] removed an expired file : {}", HostEntries::get_filename(&current_path));},
+                            Err(error) => {simple_log!("[WARNING] failed to remove an expired file : {}, {}", HostEntries::get_filename(&current_path), error);}
                         }
                     }
                 }
             }
         };
     }
-    pub async fn delete(timestamp: i64) -> () {
-        let paths = match std::fs::read_dir("./data") {
-            Ok(paths) => paths,
-            Err(error) => {
-                simple_log!("[WARNING] failed to read the data directory: {}", error);
-                return;
-            },
-        };
-        for current_path in paths.into_iter() {
-            if current_path.is_ok() {
-                let current_path = current_path.unwrap().path();
-                if current_path.is_file() {
-                    let file_timestamp: i64 = match HostEntries::get_timestamp(&current_path) {
-                        Some(stamp) => stamp,
-                        None => return,
-                    };
-                    if file_timestamp == timestamp {
-                        match fs::remove_file(&current_path).await {
-                                Ok(..) => {simple_log!("[INFO] removed file : {}", HostEntries::get_filename(&current_path));},
-                                Err(error) => {simple_log!("[WARNING] failed to remove file : {} due to : {}", HostEntries::get_filename(&current_path), error);}
-                        }
-                    }
-                }
-            }
-        }
+    pub async fn delete(timestamp: i64) -> io::Result<()> {
+            fs::remove_file(format!("./data/{}.h264", timestamp)).await?;
+            fs::remove_file(format!("./data/{}.jpg", timestamp)).await?;
+            return Ok(());
     }
     pub async fn into_json_bytes(self) -> Vec<u8> {
         match serde_json::to_vec(&self) {
             Ok(data) => data,
             Err(error) => {
-                simple_log!("[ERROR] could not parse HostEntries to json : {}", error);
+                simple_log!("[ERROR] could not parse HostEntries to json, {}", error);
                 Vec::new()
             },
         }
