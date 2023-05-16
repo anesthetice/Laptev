@@ -150,8 +150,6 @@ impl Connection {
         encrypted_json_data.extend(buffer);
         encrypted_json_data.truncate(data_length as usize);
 
-        println!("{:?}", encrypted_json_data);
-
         let json_data: Vec<u8> = match conn_self.cipher.decrypt(&nonce, encrypted_json_data.as_ref()) {
             Ok(data) => data,
             Err(error) => {
@@ -166,24 +164,23 @@ impl Connection {
         Self::process_and_send(arc_mutex_self.clone(), format!("GET {}", timestamp)).await;
         let mut conn_self = arc_mutex_self.lock().await;
 
-        let mut buffer: [u8; 12] = [0; 12];
+        // nonce + length
+        let mut buffer: [u8; 20] = [0; 20];
         conn_self.stream.read(&mut buffer).await;
-        let nonce: Nonce = Nonce::clone_from_slice(&buffer);
+        let nonce: Nonce = Nonce::clone_from_slice(&buffer[0..12]);
+        let data_len_slice: [u8; 8] = buffer[12..20].try_into().unwrap();
+        let data_length: u64 = u64::from_le_bytes(data_len_slice);
 
-        let mut buffer: [u8; 1024] = [0; 1024];
-        conn_self.stream.read(&mut buffer).await;
-        
-        let mut buffer : [u8; 8] = [0; 8];
-        conn_self.stream.read(&mut buffer).await;
-        let data_length: usize = usize::from_le_bytes(buffer);
-
+        let mut buffer: [u8; 8192] = [0; 8192];
         let mut encrypted_data: Vec<u8> = Vec::new();
-        while encrypted_data.len() < data_length {
-            let mut buffer: [u8; 8192] = [0; 8192];
-            conn_self.stream.read(&mut buffer).await;
+        while encrypted_data.len() + 8192 < data_length as usize {
+            conn_self.stream.read_exact(&mut buffer).await;
             encrypted_data.extend(buffer);
+            buffer = [0; 8192];
         }
-        encrypted_data.truncate(data_length);
+        conn_self.stream.read(&mut buffer).await;
+        encrypted_data.extend(buffer);
+        encrypted_data.truncate(data_length as usize);
 
         match conn_self.cipher.decrypt(&nonce, encrypted_data.as_ref()) {
             Ok(data) => {
@@ -191,7 +188,7 @@ impl Connection {
                     .create(true)
                     .write(true)
                     .truncate(true)
-                    .open(format!("./downloads/{}.mp4", timestamp))
+                    .open(format!("./downloads/{}.h264", timestamp))
                     .await 
                 {
                     Ok(file) => file,
@@ -252,7 +249,7 @@ impl Application for Laptev {
     }
 
     fn title(&self) -> String {
-        return "Laptev Client 0.0.1".to_string();
+        return "Laptev Client 1.0.1".to_string();
     }
     
     fn theme(&self) -> Self::Theme {
