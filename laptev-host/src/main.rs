@@ -189,11 +189,15 @@ async fn handle_client(mut stream: TcpStream) -> io::Result<()> {
     };
     simple_log!("[INFO][{}] connection secured", client_address);
     
-    // 12 bytes for the nonce, 16*100 bytes for the encrypted data
-    let mut command_buffer : Vec<u8> = Vec::new();
+    let mut panic_stop_counter : u8 = 0;
     loop {
-        command_buffer = vec![0; 1612];
-        match stream.read(&mut command_buffer).await {
+        if panic_stop_counter > 15 {
+            stream.shutdown().await?;
+            simple_log!("[ERROR][{}] closing connection due to panic counter exceeding limit", client_address);
+            return Ok(())
+        }
+        let mut command_buffer : Vec<u8> = vec![0; 1612];
+        match stream.read_exact(&mut command_buffer).await {
             Ok(bytes_read) => if bytes_read == 0 {
                 stream.shutdown().await?;
                 return Ok(());
@@ -201,9 +205,14 @@ async fn handle_client(mut stream: TcpStream) -> io::Result<()> {
             Err(error) => {
                 if error.kind() == std::io::ErrorKind::ConnectionReset {
                     stream.shutdown().await?;
-                    return Ok(())
+                    return Ok(());
+                }
+                if error.kind() == std::io::ErrorKind::UnexpectedEof {
+                    stream.shutdown().await?;
+                    return Ok(());
                 }
                 simple_log!("[WARNING][{}] failed to read from tcpstream, {:?}", client_address, error);
+                panic_stop_counter += 1;
                 continue;
             },
         };
@@ -211,7 +220,7 @@ async fn handle_client(mut stream: TcpStream) -> io::Result<()> {
         let data: Vec<u8> = match cipher.decrypt(&nonce, &command_buffer[12..]) {
             Ok(data) => data,
             Err(error) => {
-                simple_log!("[WARNING] failed to decrypt data from tcpstream, {}", error);
+                simple_log!("[WARNING][{}] failed to decrypt data from tcpstream, {}", client_address, error);
                 continue;
             },
         };
@@ -237,13 +246,8 @@ async fn handle_client(mut stream: TcpStream) -> io::Result<()> {
                         continue;
                     },
                 };
-                match stream.write_all(&nonce).await {Ok(())=>(),Err(error)=>{simple_log!("[WARNINING][{}] failed to write to tcpstream, {}", client_address, error);},};
-                match stream.flush().await {Ok(())=>(),Err(error)=>{simple_log!("[WARNINING][{}] failed to flush tcpstream, {}", client_address, error);},};
-                sleep(Duration::from_secs_f64(0.05)).await;
-                match stream.write_all(b"synchronize").await {Ok(())=>(),Err(error)=>{simple_log!("[WARNINING][{}] failed to write to tcpstream, {}", client_address, error);},};
-                match stream.flush().await {Ok(())=>(),Err(error)=>{simple_log!("[WARNINING][{}] failed to flush tcpstream, {}", client_address, error);},};
-                sleep(Duration::from_secs_f64(0.05)).await;
-                match stream.write_all(&data.len().to_be_bytes()).await {Ok(())=>(),Err(error)=>{simple_log!("[WARNINING][{}] failed to write to tcpstream, {}", client_address, error);},};
+                let nonce_length: Vec<u8> = nonce.into_iter().chain((data.len() as u64).to_le_bytes()).collect();
+                match stream.write_all(&nonce_length).await {Ok(())=>(),Err(error)=>{simple_log!("[WARNINING][{}] failed to write to tcpstream, {}", client_address, error);},};
                 match stream.flush().await {Ok(())=>(),Err(error)=>{simple_log!("[WARNINING][{}] failed to flush tcpstream, {}", client_address, error);},};
                 sleep(Duration::from_secs_f64(0.05)).await;
                 match stream.write_all(&data).await {Ok(())=>(),Err(error)=>{simple_log!("[WARNINING][{}] failed to write to tcpstream, {}", client_address, error);},};
@@ -268,20 +272,18 @@ async fn handle_client(mut stream: TcpStream) -> io::Result<()> {
                         continue;
                     },
                 };
-                match stream.write_all(&nonce).await {Ok(())=>(),Err(error)=>{simple_log!("[WARNINING][{}] failed to write to tcpstream, {}", client_address, error);},};
-                match stream.flush().await {Ok(())=>(),Err(error)=>{simple_log!("[WARNINING][{}] failed to flush tcpstream, {}", client_address, error);},};
-                sleep(Duration::from_secs_f64(0.05)).await;
-                match stream.write_all(b"video file").await {Ok(())=>(),Err(error)=>{simple_log!("[WARNINING][{}] failed to write to tcpstream, {}", client_address, error);},};
-                match stream.flush().await {Ok(())=>(),Err(error)=>{simple_log!("[WARNINING][{}] failed to flush tcpstream, {}", client_address, error);},};
-                sleep(Duration::from_secs_f64(0.05)).await;
-                match stream.write_all(&data.len().to_be_bytes()).await {Ok(())=>(),Err(error)=>{simple_log!("[WARNINING][{}] failed to write to tcpstream, {}", client_address, error);},};
+                let nonce_length: Vec<u8> = nonce.into_iter().chain((data.len() as u64).to_le_bytes()).collect();
+                match stream.write_all(&nonce_length).await {Ok(())=>(),Err(error)=>{simple_log!("[WARNINING][{}] failed to write to tcpstream, {}", client_address, error);},};
                 match stream.flush().await {Ok(())=>(),Err(error)=>{simple_log!("[WARNINING][{}] failed to flush tcpstream, {}", client_address, error);},};
                 sleep(Duration::from_secs_f64(0.05)).await;
                 match stream.write_all(&data).await {Ok(())=>(),Err(error)=>{simple_log!("[WARNINING][{}] failed to write to tcpstream, {}", client_address, error);},};
                 match stream.flush().await {Ok(())=>(),Err(error)=>{simple_log!("[WARNINING][{}] failed to flush tcpstream, {}", client_address, error);},};
             },
             ClientRequest::Delete(timestamp) => {
-                HostEntries::delete(timestamp).await;
+                match HostEntries::delete(timestamp).await {
+                    Ok(()) => (),
+                    Err(error) => {simple_log!("[WARNING][{}] failed to delete specified file, {}", client_address, error);},
+                }
             },
             ClientRequest::Unknown => (),
         }

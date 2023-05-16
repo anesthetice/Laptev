@@ -59,7 +59,7 @@ impl HostEntries {
         let paths = match std::fs::read_dir("./data") {
             Ok(paths) => paths,
             Err(error) => {
-                simple_log!("[WARNING] failed to read the data directory: {}", error);
+                simple_log!("[WARNING] failed to read the ./data directory, {}", error);
                 return None;
             },
         };
@@ -96,7 +96,7 @@ impl HostEntries {
             if filepath.is_file() {
                 match fs::read(&filepath).await {
                     Ok(data) => host_entries.push(HostEntry::new(timestamp, data)),
-                    Err(error) => {simple_log!("[ERROR] failed to read thumbnail : {} due to : {}", HostEntries::get_filename(&filepath), error);},
+                    Err(error) => {simple_log!("[ERROR] failed to read thumbnail : {}, {}", HostEntries::get_filename(&filepath), error);},
                 }
             }
         };
@@ -157,8 +157,6 @@ impl HostEntries {
         return Ok(data);
     }
 }
-
-
 
 #[derive(Debug, Serialize, Deserialize)]
 struct HostEntry {
