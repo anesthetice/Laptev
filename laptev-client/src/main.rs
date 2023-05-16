@@ -30,7 +30,7 @@ use time::UtcOffset;
 use std::{
     io::{self, Read},
     sync::Arc,
-    fmt::Debug, println,
+    fmt::Debug,
 };
 
 mod configuration;
@@ -308,7 +308,10 @@ impl Application for Laptev {
             Message::SyncDone(data) => {
                 match &self.mode {
                     Mode::Connected(connection, _) => {
-                        self.recordings = ClientEntries::from_host_entries(serde_json::from_slice::<HostEntries>(&data).unwrap_or(HostEntries::new_empty()));
+                        let mut host_entries : HostEntries = serde_json::from_slice(&data).unwrap_or(HostEntries::new_empty());
+                        host_entries.0.sort_by_key(|entry| {entry.timestamp});
+                        host_entries.0.reverse();
+                        self.recordings = ClientEntries::from_host_entries(host_entries);
                         self.mode = Mode::Connected(connection.clone(), ConnectedState::Synced);
                     },
                     _ => {},
@@ -349,7 +352,6 @@ impl Application for Laptev {
     }
 
     fn view(&self) -> Element<Self::Message> {
-        println!("Current mode : {:?}", self.mode);
         match self.mode {
             Mode::Disconnected => {
                 column![

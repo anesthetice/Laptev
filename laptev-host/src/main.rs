@@ -55,7 +55,7 @@ macro_rules! simple_log {
         println!($($args)*);
         match LOG_FILE.lock() {
             Ok(mut file) => {
-                write!(file, "{}", crate::pretty_log_timestamp());
+                write!(file, "[{}]", crate::pretty_log_timestamp());
                 writeln!(file, $($args)*);
                 file.flush();
             }

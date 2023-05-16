@@ -80,7 +80,7 @@ impl ClientEntry {
 // imported from laptev-host
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct HostEntries(Vec<HostEntry>);
+pub struct HostEntries(pub Vec<HostEntry>);
 
 impl FromIterator<HostEntry> for HostEntries {
     fn from_iter<I: IntoIterator<Item = HostEntry>>(iter: I) -> Self {
@@ -90,7 +90,6 @@ impl FromIterator<HostEntry> for HostEntries {
         }
         Self(entries)
     }
-
 }
 
 impl HostEntries {
@@ -100,8 +99,8 @@ impl HostEntries {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-struct HostEntry {
-    timestamp: i64,
+pub struct HostEntry {
+    pub timestamp: i64,
     thumbnail: Vec<u8>,
 }
 
