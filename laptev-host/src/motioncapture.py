@@ -53,13 +53,14 @@ while True:
         # Measure pixels differences between current and
         # previous frame
         mse = square(subtract(cur, prev)).mean()
-        if mse > 5:
+        if mse > 6:
             motion_count += 1
             motion_elapsed_counter = 0
 
             if motion_count >= 3:
                 if not encoding:
                     timestamp = int(time())
+                    print(f"[{timestamp}] motion detected")
 
                     thumbnail = picam2.capture_array("lores")
                     thumbnail.save(f"data/{timestamp}.jpg")
