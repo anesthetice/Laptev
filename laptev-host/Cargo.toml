@@ -1,24 +1,29 @@
 [package]
 name = "laptev-host"
-version = "1.0.0"
+version = "2.0.0"
 edition = "2021"
 author = "anesthetice"
 
 [dependencies]
-lazy_static = "1.4.*"
 
-# networking
-tokio = { version = "1.27.*", features = ["full"] }
+# main
+tokio               =   {version = "1.27.*", features = ["full"]}
+axum                =   {version = "0.7.*"}
 
 # cryptography
-rsa = {version = "0.8.2", features=["pem"]}
-aes-gcm-siv = "0.11.1"
-rand = "0.8.5"
+ed25519-dalek       =   {version = "2.1.*"}
+aes-gcm-siv         =   {version = "0.11.*"}
+rand                =   {version = "0.8.*"}
 
-# database
-serde = { version = "1.0.*", features = ["derive"] }
-serde_json = "1.0.*"
-time = { version = "0.3.*", features = ["serde", "local-offset"]}
+# serialization, logging, error handling
+serde               =   {version = "1.0.*", features = ["derive"]}
+serde_json          =   {version = "1.0.*"}
+anyhow              =   {version = "1.0.*"}
+tracing             =   {version = "0.1.*"}
+tracing-subscriber  =   {version = "0.3.*"}
 
-[target.armv7-unknown-linux-gnueabihf]
-linker = "arm-none-linux-gnueabihf-gcc"
+[profile.release]
+opt-level = 3
+
+#[target.armv7-unknown-linux-gnueabihf]
+#linker = "arm-none-linux-gnueabihf-gcc"

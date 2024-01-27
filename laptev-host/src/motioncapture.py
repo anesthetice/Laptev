@@ -30,8 +30,10 @@ picam2.set_controls({"Contrast": 1.4}) # max : 32.0
 picam2.set_controls({"Sharpness": 2.0}) # max : 16.0
 
 # H264 seemingly doesn't work with 2304x1296, so I'll be using the standard 1080p 16:9 format
-video_config = picam2.create_video_configuration(main={"size": (1920, 1080), "format": "RGB888"},
-                                                 lores={"size": lsize, "format": "YUV420"})
+video_config = picam2.create_video_configuration(
+    main={"size": (1920, 1080), "format": "RGB888"},
+    lores={"size": lsize, "format": "YUV420"}
+)
 picam2.configure(video_config)
 # high quality 1080p bitrate
 encoder = H264Encoder(162560000)
