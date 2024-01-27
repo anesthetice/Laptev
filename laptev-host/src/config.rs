@@ -1,11 +1,13 @@
+use std::fmt::Debug;
 use rand::{SeedableRng, RngCore};
 use serde::{Serialize, Deserialize};
 use tokio::io::{AsyncWriteExt, AsyncReadExt};
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
 pub struct Config {
     pub port: u16,
     pub password: Vec<u8>,
+    pub expiration: u64,
 }
 
 impl Config {
@@ -50,6 +52,12 @@ impl Config {
     fn generate() -> Self {
         let mut password: Vec<u8> = vec![0; 256];
         rand::rngs::StdRng::from_entropy().fill_bytes(&mut password);
-        Self { port: 12675, password }
+        Self { port: 12675, password, expiration: 1800 }
+    }
+}
+
+impl Debug for Config {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "port = {}\npassword = {:?}\n", self.port, self.password)
     }
 }
