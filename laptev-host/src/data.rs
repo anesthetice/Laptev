@@ -1,12 +1,13 @@
+use aes_gcm_siv::{Aes256GcmSiv, KeyInit};
 use std::{
     net::SocketAddr,
-    sync::{Arc, RwLock},
+    sync::Arc,
     collections::HashMap,
     fmt::Debug,
 };
-use aes_gcm_siv::Aes256GcmSiv;
+use tokio::sync::RwLock;
 
-use crate::config::Config;
+use crate::{config::Config, utils::get_timestamp};
 
 pub type SharedState = Arc<RwLock<AppState>>;
 
@@ -25,14 +26,16 @@ impl AppState {
     /// removes a client if it has expired
     /// OPTIONAL TODO: reloads the config if it has changed
     pub fn update(&mut self) {
-        let current_time = std::time::SystemTime::now()
-        .duration_since(std::time::SystemTime::UNIX_EPOCH)
-        .unwrap()
-        .as_secs();
+        let current_time = get_timestamp();
 
         self.db.retain(|key, value| {
             value.timestamp + self.config.expiration > current_time
         })
+    }
+
+    pub fn add_client(&mut self, addr: SocketAddr, key: &[u8; 32]) {
+        self.update();
+        
     }
 }
 
@@ -48,6 +51,16 @@ impl Debug for AppState {
 pub struct ClientData {
     pub timestamp: u64,
     pub cipher: Aes256GcmSiv,
+}
+
+impl ClientData {
+    pub fn new(key: &[u8; 32]) -> Self {
+        Self {
+            timestamp: get_timestamp(),
+            // unwrap because our key is guaranteed to be 32 bytes long
+            cipher: Aes256GcmSiv::new_from_slice(key).unwrap()
+        }
+    }
 }
 
 impl Debug for ClientData {
