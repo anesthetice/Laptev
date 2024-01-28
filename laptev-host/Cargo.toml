@@ -9,15 +9,17 @@ author = "anesthetice"
 # main
 tokio               =   {version = "1.27.*", features = ["full"]}
 axum                =   {version = "0.7.*", features = ["tokio"]}
+tower-http          =   {version = "0.5.*", features = ["trace"]}
 
 # cryptography
 x25519-dalek        =   {version = "2.0.*"}
-aes-gcm-siv         =   {version = "0.11.*"}
+aes-gcm-siv         =   {version = "0.11.*", features=["std"]}
 rand                =   {version = "0.8.*"}
 
 # serialization, logging, error handling
 serde               =   {version = "1.0.*", features = ["derive"]}
 serde_json          =   {version = "1.0.*"}
+bincode             =   {version = "1.3.0"}
 anyhow              =   {version = "1.0.*"}
 tracing             =   {version = "0.1.*"}
 tracing-subscriber  =   {version = "0.3.*"}

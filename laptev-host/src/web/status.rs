@@ -1,15 +1,16 @@
 use axum::{
+    http::StatusCode,
+    response::IntoResponse,
     Router,
-    routing::get,
-    http::Response,
+    routing::get
 };
 
 pub fn routes_status() -> Router 
 {
     Router::new()
-        .route("/", get(status))
+        .route("/status", get(status))
 }
 
-async fn status() -> Response<String> {
-    Response::new("online".to_string())
+async fn status() -> impl IntoResponse{
+    StatusCode::OK
 }

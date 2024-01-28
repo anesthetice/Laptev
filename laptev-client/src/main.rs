@@ -1,4 +1,4 @@
-use aes_gcm_siv::Aes256GcmSiv;
+use aes_gcm_siv::{Aes256GcmSiv, KeyInit};
 use rand::{
     rngs::StdRng,
     SeedableRng
@@ -10,15 +10,19 @@ use x25519_dalek::{
     PublicKey
 };
 
+mod config;
+mod data;
+use data::external::{self, EncryptedMessage};
+mod utils;
+
 #[tokio::main]
 async fn main() {
     authenticate("0.0.0.0", 12675).await;
 }
 
 async fn authenticate(addr: &str, port: u16) {
+    // step 1, key exchange
     let url: String = format!("http://{addr}:{port}/handshake/0");
-
-    // generates a public key and makes it exportable to the server
     let client_private_key = EphemeralSecret::random_from_rng(StdRng::from_entropy());
     let client_public_key = PublicKey::from(&client_private_key);
 
@@ -43,8 +47,25 @@ async fn authenticate(addr: &str, port: u16) {
     }
     let server_public_key = PublicKey::from(server_public_key);
 
-    let secret = client_private_key.diffie_hellman(&server_public_key);
-    println!("{:?}", secret.as_bytes());
+    // step 2, building the cipher
+    let cipher = Aes256GcmSiv::new_from_slice(client_private_key.diffie_hellman(&server_public_key).as_bytes()).unwrap();
+
+    // step 3, authentication
+    let url: String = format!("http://{addr}:{port}/handshake/1");
+    let client = reqwest::Client::new();
+    let request = reqwest::Request::new(Method::PUT, Url::from_str(url.as_str()).unwrap());
+
+    // testing only
+    let password: &'static [u8] = &[39,5,78,114,232,84,6,7,195,232,114,73,164,88,170,152,137,183,20,163,65,62,61,66,152,101,176,217,89,27,182,219,119,137,166,183,221,246,198,247,150,37,81,1,96,215,99,201,117,163,2,98,110,120,119,119,51,2,110,114,213,71,249,204,70,19,149,126,55,34,162,87,141,255,132,126,87,26,126,138,211,19,227,190,76,84,156,255,255,18,126,159,2,58,104,118,127,22,8,101,73,174,151,75,123,47,32,164,152,139,187,136,120,94,150,228,73,111,104,110,243,145,51,23,224,167,180,44,66,177,157,45,165,175,164,75,234,238,143,98,18,250,243,11,198,241,161,93,41,244,49,41,228,6,181,77,93,60,227,63,138,93,234,29,223,195,38,187,210,40,100,187,246,104,247,34,28,156,209,251,199,45,190,12,252,156,188,230,62,27,219,99,112,21,125,156,132,63,21,228,156,137,176,194,209,92,252,21,13,245,182,134,77,183,152,83,45,247,183,94,43,228,46,176,144,255,90,68,155,140,235,70,22,246,215,239,246,218,83,28,157,213,220,116,116,70,221,165,87,199,80,137,241,55,193,19];
+
+    let resp = reqwest::RequestBuilder::from_parts(client, request)
+        .body(EncryptedMessage::new(password.as_ref(), &cipher).unwrap().into_bytes())
+        .send()
+        .await
+        .unwrap();
+
+    println!("{:?}", resp);
+
 }
 
 

@@ -51,6 +51,7 @@ impl Debug for AppState {
 pub struct ClientData {
     pub timestamp: u64,
     pub cipher: Aes256GcmSiv,
+    authenticated: bool,
 }
 
 impl ClientData {
@@ -58,8 +59,15 @@ impl ClientData {
         Self {
             timestamp: get_timestamp(),
             // unwrap because our key is guaranteed to be 32 bytes long
-            cipher: Aes256GcmSiv::new_from_slice(key).unwrap()
+            cipher: Aes256GcmSiv::new_from_slice(key).unwrap(),
+            authenticated: false,
         }
+    }
+    pub fn is_authenticated(&self) -> bool {
+        self.authenticated
+    }
+    pub fn authenticate(&mut self) {
+        self.authenticated = true;
     }
 }
 
@@ -68,3 +76,4 @@ impl Debug for ClientData {
         write!(f, "Client :\ncreation timestamp = {}", self.timestamp)
     }
 }
+

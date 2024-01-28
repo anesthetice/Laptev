@@ -9,8 +9,7 @@ pub type Result<T> = core::result::Result<T, Error>;
 
 #[derive(Debug)]
 pub enum Error {
-    AuthenticationFailed,
-    CryptographyFailed,
+    HandshakeFailed
 }
 
 impl fmt::Display for Error {
@@ -22,8 +21,7 @@ impl fmt::Display for Error {
 impl std::error::Error for Error {
     fn description(&self) -> &str {
         match self {
-            Self::CryptographyFailed => "could not set up the symetric encryption between the server and client",
-            Self::AuthenticationFailed => "could not verify the password sent by the client",
+            Self::HandshakeFailed => "could not establish a secure and trusted connection with the client"
         }
     }
 }
@@ -31,10 +29,7 @@ impl std::error::Error for Error {
 impl IntoResponse for Error {
     fn into_response(self) -> Response {
         match self {
-            Self::CryptographyFailed => {
-                StatusCode::FORBIDDEN.into_response()
-            }
-            Self::AuthenticationFailed => {
+            Self::HandshakeFailed => {
                 StatusCode::FORBIDDEN.into_response()
             }
         }
