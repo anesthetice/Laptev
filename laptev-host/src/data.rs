@@ -1,6 +1,6 @@
 use aes_gcm_siv::{Aes256GcmSiv, KeyInit};
 use std::{
-    net::SocketAddr,
+    net::IpAddr,
     sync::Arc,
     collections::HashMap,
     fmt::Debug,
@@ -13,7 +13,7 @@ pub type SharedState = Arc<RwLock<AppState>>;
 
 pub struct AppState {
     pub config: Config,
-    pub db: HashMap<SocketAddr, ClientData>,
+    pub db: HashMap<IpAddr, ClientData>,
 }
 
 impl AppState {
@@ -28,14 +28,14 @@ impl AppState {
     pub fn update(&mut self) {
         let current_time = get_timestamp();
 
-        self.db.retain(|key, value| {
+        self.db.retain(|_, value| {
             value.timestamp + self.config.expiration > current_time
         })
     }
 
-    pub fn add_client(&mut self, addr: SocketAddr, key: &[u8; 32]) {
+    pub fn add_client(&mut self, addr: IpAddr, key: &[u8; 32]) {
         self.update();
-        
+        self.db.insert(addr, ClientData::new(key));
     }
 }
 

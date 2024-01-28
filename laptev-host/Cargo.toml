@@ -8,7 +8,7 @@ author = "anesthetice"
 
 # main
 tokio               =   {version = "1.27.*", features = ["full"]}
-axum                =   {version = "0.7.*", features = ["macros"]}
+axum                =   {version = "0.7.*", features = ["tokio"]}
 
 # cryptography
 x25519-dalek        =   {version = "2.0.*"}

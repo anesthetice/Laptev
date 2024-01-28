@@ -1,3 +1,4 @@
+/*
 // not really a database, but I can't find a better name for this
 use iced::{
     alignment,
@@ -112,4 +113,4 @@ impl HostEntry {
         serde_json::from_slice(bytes).ok()
     }
 }
-
+*/

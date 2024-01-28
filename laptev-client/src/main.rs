@@ -1,3 +1,55 @@
+use aes_gcm_siv::Aes256GcmSiv;
+use rand::{
+    rngs::StdRng,
+    SeedableRng
+};
+use reqwest::{Method, Url};
+use std::str::FromStr;
+use x25519_dalek::{
+    EphemeralSecret,
+    PublicKey
+};
+
+#[tokio::main]
+async fn main() {
+    authenticate("0.0.0.0", 12675).await;
+}
+
+async fn authenticate(addr: &str, port: u16) {
+    let url: String = format!("http://{addr}:{port}/handshake/0");
+
+    // generates a public key and makes it exportable to the server
+    let client_private_key = EphemeralSecret::random_from_rng(StdRng::from_entropy());
+    let client_public_key = PublicKey::from(&client_private_key);
+
+    let client = reqwest::Client::new();
+    let request = reqwest::Request::new(Method::PUT, Url::from_str(url.as_str()).unwrap());
+
+    let resp = reqwest::RequestBuilder::from_parts(client, request)
+        .body(client_public_key.as_bytes().to_vec())
+        .send()
+        .await
+        .unwrap();
+
+    let body = resp
+        .bytes()
+        .await
+        .unwrap();
+
+    let mut server_public_key: [u8; 32] = [0; 32];
+    if body.len() != 32 {panic!("")}
+    for (idx, byte) in body.into_iter().enumerate() {
+        server_public_key[idx] = byte;
+    }
+    let server_public_key = PublicKey::from(server_public_key);
+
+    let secret = client_private_key.diffie_hellman(&server_public_key);
+    println!("{:?}", secret.as_bytes());
+}
+
+
+
+/*
 use rsa::{
     RsaPrivateKey,
     pkcs8::DecodePrivateKey,
@@ -22,19 +74,12 @@ use rand::{
     SeedableRng,
     RngCore,
 };
-use lazy_static::{
-    lazy_static,
-    initialize as ls_initialize,
-};
 use time::UtcOffset;
 use std::{
     io::{self, Read},
     sync::Arc,
     fmt::Debug,
 };
-
-mod configuration;
-use configuration::CLIENT_PRIVATE_KEY_PEM;
 
 mod database;
 use database::{
@@ -72,142 +117,6 @@ pub struct Connection {
     cipher: Aes256GcmSiv,
 }
 
-impl Debug for Connection {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Connection").finish()
-    }
-}
-
-impl Connection {
-    async fn new(address: String) -> Option<Arc<Mutex<Self>>> {
-        let mut stream: TcpStream = TcpStream::connect(address).await.ok()?;
-        let rng: StdRng = StdRng::from_entropy();
-        // authentication using RSA
-        {
-            let mut buffer : [u8; 512] = [0; 512];
-            stream.read(&mut buffer).await.ok()?;
-            let token : Vec<u8> = CLIENT_PRIVATE_KEY.decrypt(Pkcs1v15Encrypt, &buffer).unwrap();
-            stream.write(&token).await.ok()?;
-            stream.flush().await.ok()?;
-        }
-    
-        let cipher = {
-            let mut buffer : [u8; 512] = [0; 512];
-            stream.read(&mut buffer).await.ok()?;
-            let key : Vec<u8> = CLIENT_PRIVATE_KEY.decrypt(Pkcs1v15Encrypt, &buffer).ok()?;
-            Aes256GcmSiv::new_from_slice(&key[..]).ok()?
-        };
-
-        return Some(Arc::new(Mutex::new(Self{stream, rng, cipher,})));
-    }
-    async fn process_and_send(arc_mutex_self: Arc<Mutex<Self>>, command: String) -> () {
-        let mut conn_self = arc_mutex_self.lock().await;
-        let nonce = {
-            let mut nonce_slice: [u8; 12] = [0; 12]; conn_self.rng.fill_bytes(&mut nonce_slice);
-            Nonce::clone_from_slice(&nonce_slice)
-        };
-
-        let mut command : Vec<u8> = command.into_bytes();
-        if command.len() < 1584 {
-            while command.len() < 1584 {command.push(0)}
-        }
-        else if command.len() > 1584 {
-            eprintln!("[WARNING] command is too large");
-            return;
-        }
-        let mut encrypted_command: Vec<u8> = match conn_self.cipher.encrypt(&nonce, command.as_ref()) {
-            Ok(enc_command) => enc_command,
-            Err(error) => {
-                eprintln!("[WARNING] failed to encrypt command");
-                return;
-            },
-        };
-        nonce.into_iter().rev().for_each(|byte| {encrypted_command.insert(0, byte)});
-        if encrypted_command.len() == 1612 {
-            conn_self.stream.write_all(&encrypted_command).await;
-            conn_self.stream.flush().await;
-        };
-    }
-    async fn sync_with_host(arc_mutex_self: Arc<Mutex<Self>>) -> Vec<u8> {
-        Self::process_and_send(arc_mutex_self.clone(), "SYNC".to_string()).await;
-        let mut conn_self = arc_mutex_self.lock().await;
-
-        // nonce + length
-        let mut buffer: [u8; 20] = [0; 20];
-        conn_self.stream.read(&mut buffer).await;
-        let nonce: Nonce = Nonce::clone_from_slice(&buffer[0..12]);
-        let data_len_slice: [u8; 8] = buffer[12..20].try_into().unwrap();
-        let data_length: u64 = u64::from_le_bytes(data_len_slice);
-
-        let mut buffer: [u8; 8192] = [0; 8192];
-        let mut encrypted_json_data: Vec<u8> = Vec::new();
-        while encrypted_json_data.len() + 8192 < data_length as usize {
-            conn_self.stream.read_exact(&mut buffer).await;
-            encrypted_json_data.extend(buffer);
-            buffer = [0; 8192];
-        }
-        conn_self.stream.read(&mut buffer).await;
-        encrypted_json_data.extend(buffer);
-        encrypted_json_data.truncate(data_length as usize);
-
-        let json_data: Vec<u8> = match conn_self.cipher.decrypt(&nonce, encrypted_json_data.as_ref()) {
-            Ok(data) => data,
-            Err(error) => {
-                eprintln!("[WARNING] failed to decrypt synchronization data, {}", error);
-                return Vec::new();
-            }, 
-        };
-
-        return json_data;
-    }
-    async fn get(arc_mutex_self: Arc<Mutex<Self>>, timestamp: i64) -> () {
-        Self::process_and_send(arc_mutex_self.clone(), format!("GET {}", timestamp)).await;
-        let mut conn_self = arc_mutex_self.lock().await;
-
-        // nonce + length
-        let mut buffer: [u8; 20] = [0; 20];
-        conn_self.stream.read(&mut buffer).await;
-        let nonce: Nonce = Nonce::clone_from_slice(&buffer[0..12]);
-        let data_len_slice: [u8; 8] = buffer[12..20].try_into().unwrap();
-        let data_length: u64 = u64::from_le_bytes(data_len_slice);
-
-        let mut buffer: [u8; 8192] = [0; 8192];
-        let mut encrypted_data: Vec<u8> = Vec::new();
-        while encrypted_data.len() + 8192 < data_length as usize {
-            conn_self.stream.read_exact(&mut buffer).await;
-            encrypted_data.extend(buffer);
-            buffer = [0; 8192];
-        }
-        conn_self.stream.read(&mut buffer).await;
-        encrypted_data.extend(buffer);
-        encrypted_data.truncate(data_length as usize);
-
-        match conn_self.cipher.decrypt(&nonce, encrypted_data.as_ref()) {
-            Ok(data) => {
-                let mut file =  match OpenOptions::new()
-                    .create(true)
-                    .write(true)
-                    .truncate(true)
-                    .open(format!("./downloads/{}.h264", timestamp))
-                    .await 
-                {
-                    Ok(file) => file,
-                    Err(error) => {
-                        eprintln!("[WARNINING] failed to create a video file to ./downloads : {}", error);
-                        return;
-                    }
-                };
-                match file.write_all(&data).await {
-                    Ok(..) => {},
-                    Err(error) => eprintln!("[WARNINNG] failed to write to video file in ./downloads : {}", error),
-                };
-            },
-            Err(error) => {
-                eprintln!("[WARNING] failed to decrypt video : {}", error);
-            }, 
-        };
-    }
-}
 
 #[derive(Debug, Clone, Copy)]
 enum ConnectedState {
@@ -512,3 +421,4 @@ fn get_default_address() -> String {
     }
     return address;
 }
+*/

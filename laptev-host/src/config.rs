@@ -30,14 +30,14 @@ impl Config {
             .truncate(true)
             .open("laptev.config")
             .await?
-            .write_all(serde_json::to_vec_pretty(&self)?.as_ref())
+            .write_all(serde_json::to_vec(&self)?.as_ref())
             .await?;
         
         Ok(())
     }
 
     async fn load() -> anyhow::Result<Self> {
-        let mut buffer: Vec<u8> = Vec::with_capacity(4096);
+        let mut buffer: Vec<u8> = Vec::with_capacity(1024);
         tokio::fs::OpenOptions::new()
             .create(false)
             .read(true)
@@ -45,7 +45,6 @@ impl Config {
             .await?
             .read_to_end(&mut buffer)
             .await?;
-        println!("{:?}", buffer.len());
         Ok(serde_json::from_slice(&buffer)?)
     }
 

@@ -1,15 +1,15 @@
 use axum::{
-    extract::{State, ConnectInfo, Query},
-    http::Response,
+    body::Bytes,
+    extract::{ConnectInfo, Path, State},
+    response::IntoResponse,
     Router,
-    routing::post
+    routing::put
 };
 use rand::{
     rngs::StdRng,
     SeedableRng
 };
 use std::{
-    collections::HashMap,
     net::SocketAddr
 };
 use x25519_dalek::{
@@ -18,7 +18,7 @@ use x25519_dalek::{
 };
 use crate::{
     data::SharedState,
-    error::{Error, Result}
+    error::Error
 };
 
 /* 
@@ -30,41 +30,33 @@ use crate::{
 pub fn routes_handshake(state: SharedState) -> Router 
 {
     Router::new()
-        .route("/handshake", post(handshake))
+        .route("/handshake/:id", put(handshake))
         .with_state(state)
 }
 
 async fn handshake(
-    Query(params): Query<HashMap<String, String>>,
+    State(state): State<SharedState>,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
-    State(state): State<SharedState>
-) -> Result<Response<String>>
+    Path(id): Path<u8>,
+    body: Bytes,
+) -> impl IntoResponse
 {   
-    if let Some(string) = params.get("key-exchange") {
+    if id == 0 {
         let mut client_public_key: [u8; 32] = [0; 32];
-        for (idx, subslice) in string.split("-").enumerate() {
-            if idx < 32 {
-                if let Ok(num) = subslice.parse::<u8>() {
-                    client_public_key[idx] = num;
-                    continue;
-                }
-            }
-            return Err(Error::CryptographyFailed);
+        if body.len() != 32 {return Err(Error::AuthenticationFailed)}
+        for (idx, byte) in body.into_iter().enumerate() {
+            client_public_key[idx] = byte;
         }
         let client_public_key = PublicKey::from(client_public_key);    
         let server_private_key = EphemeralSecret::random_from_rng(StdRng::from_entropy());
+        let server_public_key = PublicKey::from(&server_private_key);
         
-        let body = PublicKey::from(&server_private_key)
-        .as_bytes()
-        .into_iter()
-        .fold(String::new(), |acc, x| {acc + &x.to_string()});
-        
-        state.write().await.add_client(addr, server_private_key.diffie_hellman(&client_public_key).as_bytes());
-    
-        Ok(Response::new(body))
+        state.write().await.add_client(addr.ip(), server_private_key.diffie_hellman(&client_public_key).as_bytes());
+        println!("{:?}", state.read().await);
+        Ok(Bytes::copy_from_slice(server_public_key.as_bytes()))
     }
     else {
-        Ok(Response::new("Ok".to_string()))
+        Err(Error::AuthenticationFailed)
     }
     
 }
