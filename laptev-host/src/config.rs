@@ -14,23 +14,34 @@ impl Config {
     /// uses Self::load(), Self::generate(), and Self::save() to guarantee a valid configuration is obtained
     pub async fn new() -> Self {
         match Self::load().await {
-            Ok(config) => config,
+            Ok(config) => {
+                tracing::info!("configuration loaded from laptev.config");
+                config
+            },
             Err(_) => {
+                tracing::info!("failed to load configuration");
                 let config = Self::generate();
-                config.save().await.unwrap();
+                if config.save().await.is_err() {tracing::warn!("failed to save generated config")}
                 config 
             }
         }
     }
 
     async fn save(&self) -> anyhow::Result<()> {
+        let serialized_data: String = format!(
+            "{{\n  \"port\": {},\n  \"password\": {},\n  \"expiration\": {}\n}}",
+            serde_json::to_string_pretty(&self.port)?,
+            serde_json::to_string(&self.password)?,
+            serde_json::to_string_pretty(&self.expiration)?
+        );
+
         let _ = tokio::fs::OpenOptions::new()
             .create(true)
             .write(true)
             .truncate(true)
             .open("laptev.config")
             .await?
-            .write_all(serde_json::to_vec(&self)?.as_ref())
+            .write_all(serialized_data.as_bytes())
             .await?;
         
         Ok(())
@@ -49,7 +60,7 @@ impl Config {
     }
 
     fn generate() -> Self {
-        let mut password: Vec<u8> = vec![0; 256];
+        let mut password: Vec<u8> = vec![0; 128];
         rand::rngs::StdRng::from_entropy().fill_bytes(&mut password);
         Self { port: 12675, password, expiration: 1800 }
     }

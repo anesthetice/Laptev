@@ -29,5 +29,6 @@ async fn main() {
     let bindaddr: SocketAddr = SocketAddr::from(([0,0,0,0], shared_state.read().await.config.port));
     let listener = tokio::net::TcpListener::bind(bindaddr).await.unwrap();
     axum::serve(listener, router.into_make_service_with_connect_info::<SocketAddr>()).await.unwrap();
+    
 }
 
