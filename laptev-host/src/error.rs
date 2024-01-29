@@ -1,9 +1,8 @@
-use core::fmt;
-
 use axum::{
     response::{IntoResponse, Response},
     http::StatusCode,
 };
+use core::fmt;
 
 pub type Result<T> = core::result::Result<T, Error>;
 

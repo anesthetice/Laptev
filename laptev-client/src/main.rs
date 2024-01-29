@@ -3,39 +3,60 @@ use rand::{
     rngs::StdRng,
     SeedableRng
 };
-use reqwest::{Method, Url};
-use std::str::FromStr;
+use reqwest::{Method, StatusCode, Url};
+use std::{net::SocketAddr, str::FromStr};
 use x25519_dalek::{
     EphemeralSecret,
     PublicKey
 };
 
 mod config;
+use config::Config;
 mod data;
 use data::external::{self, EncryptedMessage};
+mod error;
+use error::Error;
 mod utils;
 
 #[tokio::main]
 async fn main() {
-    authenticate("0.0.0.0", 12675).await;
+    let config = Config::new().await;
+    let socket_addr  = SocketAddr::from_str("0.0.0.0:12675").unwrap();
+
+    let _ = authenticate(&socket_addr, &config).await.unwrap();
 }
 
-async fn authenticate(addr: &str, port: u16) {
-    // step 1, key exchange
-    let url: String = format!("http://{addr}:{port}/handshake/0");
+async fn authenticate(
+    socket_address: &SocketAddr, 
+    config: &Config
+) -> error::Result<Aes256GcmSiv> 
+{
+    use error::HandshakeFailedReason as HFR;
+    let base_url: String = format!("http://{}/", socket_address.to_string());
+
+    // step 1, checking if the server is online
+    let url: String = format!("{}status", base_url);
+    let response = reqwest::get(&url).await.or_else(|_| {Err(Error::HandshakeFailed(HFR::ServerOffline))})?;
+    if response.status() != StatusCode::OK {return Err(Error::HandshakeFailed(HFR::ServerOffline))}
+
+    // step 2, checking we have the password to the server
+    if !config.entries.contains_key(&socket_address.ip()) {return Err(Error::HandshakeFailed(HFR::UknownServer))}
+
+    // step 3, key exchange
+    let url: String = format!("{}handshake/0", base_url);
     let client_private_key = EphemeralSecret::random_from_rng(StdRng::from_entropy());
     let client_public_key = PublicKey::from(&client_private_key);
 
     let client = reqwest::Client::new();
     let request = reqwest::Request::new(Method::PUT, Url::from_str(url.as_str()).unwrap());
 
-    let resp = reqwest::RequestBuilder::from_parts(client, request)
+    let response = reqwest::RequestBuilder::from_parts(client, request)
         .body(client_public_key.as_bytes().to_vec())
         .send()
         .await
         .unwrap();
 
-    let body = resp
+    let body = response
         .bytes()
         .await
         .unwrap();
@@ -47,6 +68,7 @@ async fn authenticate(addr: &str, port: u16) {
     }
     let server_public_key = PublicKey::from(server_public_key);
 
+    /*
     // step 2, building the cipher
     let cipher = Aes256GcmSiv::new_from_slice(client_private_key.diffie_hellman(&server_public_key).as_bytes()).unwrap();
 
@@ -65,7 +87,8 @@ async fn authenticate(addr: &str, port: u16) {
         .unwrap();
 
     println!("{:?}", resp);
-
+    */
+    Err(anyhow::anyhow!(Error::HandshakeFailed(error::HandshakeFailedReason::UknownServer)))
 }
 
 
