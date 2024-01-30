@@ -26,7 +26,7 @@ async fn main() {
         .merge(crate::web::status::routes_status())
         .merge(crate::web::handshake::routes_handshake(shared_state.clone()));
 
-    let bindaddr: SocketAddr = SocketAddr::from(([0,0,0,0], shared_state.read().await.config.port));
+    let bindaddr: SocketAddr = SocketAddr::from(([127,0,0,1], shared_state.read().await.config.port));
     let listener = tokio::net::TcpListener::bind(bindaddr).await.unwrap();
     axum::serve(listener, router.into_make_service_with_connect_info::<SocketAddr>()).await.unwrap();
     

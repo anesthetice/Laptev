@@ -8,15 +8,15 @@ author = "anesthetice"
 
 # main
 reqwest             =   {version = "0.11.23"}
-iced                =   {version = "0.9.*", features=["image", "tokio"]}
-iced_futures        =   {version = "0.6.0", features = ["tokio"]}
-iced_native         =   {version = "0.10.3"}
+iced                =   {version = "0.10.*", features = ["image"]}
+iced_futures        =   {version = "0.7.*", features = ["tokio"]}
+#iced_native         =   {version = "0.10.3"}
 time                =   {version = "0.3.20", features = ["local-offset"]}
 tokio               =   {version = "1.27.*", features = ["full"]}
 
 # cryptography
 x25519-dalek        =   {version = "2.0.*"}
-aes-gcm-siv         =   {version = "0.11.*", features=["std"]}
+aes-gcm-siv         =   {version = "0.11.*", features = ["std"]}
 rand                =   {version = "0.8.*"}
 
 # serialization, logging, error handling

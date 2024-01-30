@@ -13,7 +13,7 @@ tower-http          =   {version = "0.5.*", features = ["trace"]}
 
 # cryptography
 x25519-dalek        =   {version = "2.0.*"}
-aes-gcm-siv         =   {version = "0.11.*", features=["std"]}
+aes-gcm-siv         =   {version = "0.11.*", features = ["std"]}
 rand                =   {version = "0.8.*"}
 
 # serialization, logging, error handling

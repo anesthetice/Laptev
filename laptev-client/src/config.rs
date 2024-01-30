@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use std::{collections::HashMap, net::IpAddr};
+use std::{collections::HashMap, net::IpAddr, str::FromStr};
 
 
 #[derive(Serialize, Deserialize, Default)]
@@ -17,7 +17,8 @@ impl Config {
             },
             Err(_) => {
                 tracing::info!("failed to load configuration");
-                let config = Self::default();
+                let mut config = Self::default();
+                config.entries.insert(IpAddr::from_str("127.0.0.1").unwrap(), vec![12, 24]);
                 if config.save().await.is_err() {tracing::warn!("failed to save generated config")}
                 config 
             }

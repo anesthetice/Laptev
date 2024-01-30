@@ -17,14 +17,14 @@ impl EncryptedMessage {
         rng_fill_bytes(&mut nonce);
         Ok(Self {
             nonce: nonce,
-            data: cipher.encrypt(nonce.as_ref().into(), unencrypted_data)?
+            data: cipher.encrypt(&nonce.into(), unencrypted_data)?
         })
     }
     pub fn try_from_bytes(data: &[u8]) -> Result<Self> {
         Ok(bincode::deserialize(data)?)
     }
     pub fn try_decrypt(&self, cipher: &Aes256GcmSiv) -> Result<Vec<u8>> {
-        Ok(cipher.decrypt(self.nonce.as_ref().into(), self.data.as_ref())?)
+        Ok(cipher.decrypt(&self.nonce.into(), self.data.as_ref())?)
     }
     pub fn into_bytes(self) -> Vec<u8> {
         bincode::serialize(&self).unwrap()
