@@ -1,6 +1,6 @@
 use axum::{
-    response::{IntoResponse, Response},
     http::StatusCode,
+    response::{IntoResponse, Response},
 };
 use core::fmt;
 
@@ -8,7 +8,9 @@ pub type Result<T> = core::result::Result<T, Error>;
 
 #[derive(Debug)]
 pub enum Error {
-    HandshakeFailed
+    HandshakeFailed,
+    NotAuthenticated,
+    InternalError
 }
 
 impl fmt::Display for Error {
@@ -20,7 +22,15 @@ impl fmt::Display for Error {
 impl std::error::Error for Error {
     fn description(&self) -> &str {
         match self {
-            Self::HandshakeFailed => "could not establish a secure and trusted connection with the client"
+            Self::HandshakeFailed => {
+                "could not establish a secure and trusted connection with the client"
+            }
+            Self::NotAuthenticated => {
+                "not an authenticated client"
+            }
+            Self::InternalError => {
+                "internal server error"
+            }
         }
     }
 }
@@ -28,9 +38,9 @@ impl std::error::Error for Error {
 impl IntoResponse for Error {
     fn into_response(self) -> Response {
         match self {
-            Self::HandshakeFailed => {
-                StatusCode::FORBIDDEN.into_response()
-            }
+            Self::HandshakeFailed => StatusCode::FORBIDDEN.into_response(),
+            Self::NotAuthenticated => StatusCode::FORBIDDEN.into_response(),
+            Self::InternalError => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
         }
     }
 }

@@ -1,7 +1,7 @@
+use rand::{RngCore, SeedableRng};
+use serde::{Deserialize, Serialize};
 use std::fmt::Debug;
-use rand::{SeedableRng, RngCore};
-use serde::{Serialize, Deserialize};
-use tokio::io::{AsyncWriteExt, AsyncReadExt};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 #[derive(Serialize, Deserialize)]
 pub struct Config {
@@ -17,12 +17,14 @@ impl Config {
             Ok(config) => {
                 tracing::info!("configuration loaded from laptev.config");
                 config
-            },
+            }
             Err(_) => {
                 tracing::info!("failed to load configuration");
                 let config = Self::generate();
-                if config.save().await.is_err() {tracing::warn!("failed to save generated config")}
-                config 
+                if config.save().await.is_err() {
+                    tracing::warn!("failed to save generated config")
+                }
+                config
             }
         }
     }
@@ -43,7 +45,7 @@ impl Config {
             .await?
             .write_all(serialized_data.as_bytes())
             .await?;
-        
+
         Ok(())
     }
 
@@ -62,7 +64,11 @@ impl Config {
     fn generate() -> Self {
         let mut password: Vec<u8> = vec![0; 128];
         rand::rngs::StdRng::from_entropy().fill_bytes(&mut password);
-        Self { port: 12675, password, expiration: 1800 }
+        Self {
+            port: 12675,
+            password,
+            expiration: 1800,
+        }
     }
 }
 

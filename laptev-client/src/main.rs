@@ -1,14 +1,8 @@
 use aes_gcm_siv::{Aes256GcmSiv, KeyInit};
-use rand::{
-    rngs::StdRng,
-    SeedableRng
-};
+use rand::{rngs::StdRng, SeedableRng};
 use reqwest::{Method, StatusCode, Url};
 use std::{net::SocketAddr, str::FromStr};
-use x25519_dalek::{
-    EphemeralSecret,
-    PublicKey
-};
+use x25519_dalek::{EphemeralSecret, PublicKey};
 
 mod config;
 use config::Config;
@@ -18,21 +12,14 @@ mod error;
 use error::Error;
 mod utils;
 
+
+/*
 #[tokio::main]
 async fn main() -> iced::Result {
-    
     tracing_subscriber::fmt()
         .with_max_level(tracing::Level::INFO)
         .compact()
         .init();
-
-    /*
-
-    let config = Config::new().await;
-    let socket_addr  = SocketAddr::from_str("127.0.0.1:12675").unwrap();
-
-    let cipher = authenticate(&socket_addr, &config).await.unwrap();
-    */
 
     let settings: iced::Settings<()> = iced::Settings {
         window: iced::window::Settings {
@@ -46,12 +33,28 @@ async fn main() -> iced::Result {
     };
     Laptev::run(settings)
 }
+*/
 
-async fn authenticate(
-    socket_address: &SocketAddr, 
-    config: &Config
-) -> error::Result<Aes256GcmSiv> 
-{
+#[tokio::main]
+async fn main() {
+    tracing_subscriber::fmt()
+    .with_max_level(tracing::Level::INFO)
+    .compact()
+    .init();
+
+    let config = Config::new().await;
+    let socket_addr  = SocketAddr::from_str("127.0.0.1:12675").unwrap();
+
+    let cipher = authenticate(&socket_addr, &config).await.unwrap();
+
+    let resp = reqwest::get("http://127.0.0.1:12675/sync").await.unwrap();
+    let e = EncryptedMessage::try_from_bytes(&resp.bytes().await.unwrap()).unwrap();
+    let e = e.try_decrypt(&cipher).unwrap();
+    let e : Vec<(u64, Vec<u8>)> = bincode::deserialize(&e).unwrap();
+    println!("{:?}", e);
+}
+
+async fn authenticate(socket_address: &SocketAddr, config: &Config) -> error::Result<Aes256GcmSiv> {
     use error::HandshakeFailedReason as HFR;
     let base_url: String = format!("http://{}/", socket_address.to_string());
 
@@ -61,10 +64,15 @@ async fn authenticate(
         tracing::error!("{}", error);
         Err(Error::HandshakeFailed(HFR::ServerOffline))
     })?;
-    if response.status() != StatusCode::OK {return Err(Error::HandshakeFailed(HFR::ServerOffline))}
+    if response.status() != StatusCode::OK {
+        return Err(Error::HandshakeFailed(HFR::ServerOffline));
+    }
 
     // step 2, checking we have the password to the server
-    let password = config.entries.get(&socket_address.ip()).ok_or(Error::HandshakeFailed(HFR::UknownServer))?;
+    let password = config
+        .entries
+        .get(&socket_address.ip())
+        .ok_or(Error::HandshakeFailed(HFR::UknownServer))?;
 
     // step 3, key exchange
     let url: String = format!("{}handshake/0", base_url);
@@ -83,13 +91,10 @@ async fn authenticate(
             Err(Error::HandshakeFailed(HFR::KeyExchangeFailed))
         })?;
 
-    let body = response
-        .bytes()
-        .await
-        .or_else(|error| {
-            tracing::error!("{}", error);
-            Err(Error::HandshakeFailed(HFR::KeyExchangeFailed))
-        })?;
+    let body = response.bytes().await.or_else(|error| {
+        tracing::error!("{}", error);
+        Err(Error::HandshakeFailed(HFR::KeyExchangeFailed))
+    })?;
 
     let mut server_public_key: [u8; 32] = [0; 32];
     if body.len() != 32 {
@@ -103,7 +108,12 @@ async fn authenticate(
 
     // step 4, building the cipher
     // we can unwrap since at this point it is guaranteed that our key will be 32-bytes
-    let cipher = Aes256GcmSiv::new_from_slice(client_private_key.diffie_hellman(&server_public_key).as_bytes()).unwrap();
+    let cipher = Aes256GcmSiv::new_from_slice(
+        client_private_key
+            .diffie_hellman(&server_public_key)
+            .as_bytes(),
+    )
+    .unwrap();
 
     // step 5, authentication
     let url: String = format!("{}handshake/1", base_url);
@@ -111,7 +121,11 @@ async fn authenticate(
     let request = reqwest::Request::new(Method::PUT, Url::from_str(url.as_str()).unwrap());
 
     let resp = reqwest::RequestBuilder::from_parts(client, request)
-        .body(EncryptedMessage::new(password.as_ref(), &cipher).unwrap().into_bytes())
+        .body(
+            EncryptedMessage::new(password.as_ref(), &cipher)
+                .unwrap()
+                .into_bytes(),
+        )
         .send()
         .await
         .or_else(|error| {
@@ -126,15 +140,12 @@ async fn authenticate(
     }
 }
 
-
+/*
 use iced::{
-    Application,
-    Command,
-    Theme,
-    widget::{button, column, image, text, text_input},
+    alignment, color,
     theme::Palette,
-    color,
-    alignment,
+    widget::{button, column, image, text, text_input},
+    Application, Command, Theme,
 };
 
 struct Laptev {
@@ -144,7 +155,10 @@ struct Laptev {
 
 impl Default for Laptev {
     fn default() -> Self {
-        Self { mode: Mode::Initial, socket_address: String::new() }
+        Self {
+            mode: Mode::Initial,
+            socket_address: String::new(),
+        }
     }
 }
 
@@ -157,13 +171,13 @@ impl iced::Application for Laptev {
     fn new(flags: Self::Flags) -> (Self, iced::Command<Self::Message>) {
         (Self::default(), Command::none())
     }
-    
+
     fn title(&self) -> String {
         return "Laptev Client 2.0.0".to_string();
     }
-    
+
     fn theme(&self) -> Self::Theme {
-        let laptev_palette : Palette = Palette {
+        let laptev_palette: Palette = Palette {
             background: color!(229, 241, 237),
             text: color!(49, 108, 107),
             primary: color!(229, 241, 237),
@@ -174,40 +188,45 @@ impl iced::Application for Laptev {
     }
 
     fn update(&mut self, message: Self::Message) -> Command<Self::Message> {
-        Command::none()
+        match message {
+            Message::SocketAddrInputUpdate(string) => {
+                self.socket_address = string;
+                Command::none()
+            }
+            Message::None => Command::none(),
+        }
     }
 
     fn view(&self) -> iced::Element<'_, Self::Message, iced::Renderer<Self::Theme>> {
         column![
-            image("./res/icon-clear.png")
-                .width(175)
-                .height(175),
+            image("./res/icon-clear.png").width(175).height(175),
             text_input("address:port", self.socket_address.as_str())
-                //.on_input(Message::None)
+                .on_input(Message::SocketAddrInputUpdate)
                 .on_submit(Message::None)
                 .padding([10, 5]),
             button(text("connect").horizontal_alignment(alignment::Horizontal::Center))
                 .on_press(Message::None)
                 .padding(5)
                 .width(75),
-            ]
-            .align_items(alignment::Alignment::Center)
-            .padding(20)
-            .spacing(10)
-            .into()
+        ]
+        .align_items(alignment::Alignment::Center)
+        .padding(20)
+        .spacing(10)
+        .into()
     }
-
 }
 
 #[derive(Debug, Clone)]
 enum Message {
-    None
+    None,
+    SocketAddrInputUpdate(String),
 }
 
 enum Mode {
     Initial,
+    Loading(u8),
+    Loaded,
 }
-
 
 /*
 use iced::{
@@ -249,7 +268,7 @@ enum Mode {
 struct Laptev {
     address: String,
     mode: Mode,
-    recordings: ClientEntries, 
+    recordings: ClientEntries,
 }
 
 impl Laptev {
@@ -303,7 +322,7 @@ impl Application for Laptev {
                         Command::none()
                     },
                 }
-                
+
             },
             Message::SyncWithHost => {
                 match self.mode.clone() {
@@ -440,7 +459,7 @@ impl Application for Laptev {
                                 image("./res/icon-clear.png")
                                     .width(75)
                                     .height(75),
-        
+
                                 button(text("disconnect").horizontal_alignment(alignment::Horizontal::Center))
                                     .on_press(Message::Disconnect)
                                     .padding(5),
@@ -521,4 +540,5 @@ fn get_default_address() -> String {
     }
     return address;
 }
+*/
 */

@@ -1,10 +1,5 @@
 use aes_gcm_siv::{Aes256GcmSiv, KeyInit};
-use std::{
-    net::IpAddr,
-    sync::Arc,
-    collections::HashMap,
-    fmt::Debug,
-};
+use std::{collections::HashMap, fmt::Debug, net::IpAddr, sync::Arc};
 use tokio::sync::RwLock;
 
 use crate::{config::Config, utils::get_timestamp};
@@ -28,9 +23,8 @@ impl AppState {
     pub fn update(&mut self) {
         let current_time = get_timestamp();
 
-        self.db.retain(|_, value| {
-            value.timestamp + self.config.expiration > current_time
-        })
+        self.db
+            .retain(|_, value| value.timestamp + self.config.expiration > current_time)
     }
 
     pub fn add_client(&mut self, addr: IpAddr, key: &[u8; 32]) {
@@ -41,9 +35,18 @@ impl AppState {
 
 impl Debug for AppState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let client_data = self.db.iter().map(|(addr, data)| {
-            format!("address = {}\ntimestamp = {}\n", addr.to_string(), data.timestamp)
-        }).collect::<Vec<String>>().join("\n");
+        let client_data = self
+            .db
+            .iter()
+            .map(|(addr, data)| {
+                format!(
+                    "address = {}\ntimestamp = {}\n",
+                    addr.to_string(),
+                    data.timestamp
+                )
+            })
+            .collect::<Vec<String>>()
+            .join("\n");
         write!(f, "[Config]\n{:?}\n[Clients]\n{}", self.config, client_data)
     }
 }
@@ -76,4 +79,3 @@ impl Debug for ClientData {
         write!(f, "Client :\ncreation timestamp = {}", self.timestamp)
     }
 }
-
