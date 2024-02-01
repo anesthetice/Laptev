@@ -47,10 +47,14 @@ async fn main() {
 
     let cipher = authenticate(&socket_addr, &config).await.unwrap();
 
-    let resp = reqwest::get("http://127.0.0.1:12675/download/1234").await.unwrap();
-    let e = EncryptedMessage::try_from_bytes(&resp.bytes().await.unwrap()).unwrap();
-    let e = e.try_decrypt(&cipher).unwrap();
-    println!("{:?}", e);
+    let client = reqwest::Client::new();
+    let request = reqwest::Request::new(Method::DELETE, Url::from_str("http://127.0.0.1:12675/delete/1234").unwrap());
+    
+    let response = reqwest::RequestBuilder::from_parts(client, request)
+        .send()
+        .await;
+
+    println!("{:?}", response);
 }
 
 async fn authenticate(socket_address: &SocketAddr, config: &Config) -> error::Result<Aes256GcmSiv> {

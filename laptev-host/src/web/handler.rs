@@ -26,7 +26,7 @@ pub fn routes_handler(state: SharedState) -> Router {
                 .make_span_with(trace::DefaultMakeSpan::new().level(Level::INFO))
                 .on_response(trace::DefaultOnResponse::new().level(Level::INFO)),
         )
-        .route("/delete/:id", del(download))
+        .route("/delete/:id", del(delete))
         .with_state(state.clone())
         .layer(
             TraceLayer::new_for_http()
