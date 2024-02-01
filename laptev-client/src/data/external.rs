@@ -23,7 +23,11 @@ impl EncryptedMessage {
         Ok(bincode::deserialize(data)?)
     }
     pub fn try_decrypt(&self, cipher: &Aes256GcmSiv) -> Result<Vec<u8>> {
-        Ok(cipher.decrypt(&self.nonce.into(), self.data.as_ref())?)
+        let mut data = cipher.decrypt(&self.nonce.into(), self.data.as_ref())?;
+        // removes the first 8 bytes that give us the length of the plaintext
+        // really not useful to us since we are not using associated data
+        //if data.len() >= 8 {data.drain(0..8);}
+        Ok(data)
     }
     pub fn into_bytes(self) -> Vec<u8> {
         bincode::serialize(&self).unwrap()
@@ -36,7 +40,7 @@ mod test {
     fn encrypted_message() {
         use super::EncryptedMessage;
         use aes_gcm_siv::{Aes256GcmSiv, KeyInit};
-        use rand::{RngCore, SeedableRng};
+        use rand::SeedableRng;
 
         let cipher: Aes256GcmSiv = Aes256GcmSiv::new(&Aes256GcmSiv::generate_key(
             rand::rngs::StdRng::from_entropy(),

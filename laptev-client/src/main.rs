@@ -47,10 +47,9 @@ async fn main() {
 
     let cipher = authenticate(&socket_addr, &config).await.unwrap();
 
-    let resp = reqwest::get("http://127.0.0.1:12675/sync").await.unwrap();
+    let resp = reqwest::get("http://127.0.0.1:12675/download/1234").await.unwrap();
     let e = EncryptedMessage::try_from_bytes(&resp.bytes().await.unwrap()).unwrap();
     let e = e.try_decrypt(&cipher).unwrap();
-    let e : Vec<(u64, Vec<u8>)> = bincode::deserialize(&e).unwrap();
     println!("{:?}", e);
 }
 
