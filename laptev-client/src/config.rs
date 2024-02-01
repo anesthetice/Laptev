@@ -14,14 +14,14 @@ impl Config {
                 tracing::info!("configuration loaded from laptev.config");
                 config
             }
-            Err(_) => {
-                tracing::info!("failed to load configuration");
+            Err(error) => {
+                tracing::warn!("failed to load configuration\n{}", error);
                 let mut config = Self::default();
                 config
                     .entries
-                    .insert(IpAddr::from_str("127.0.0.1").unwrap(), vec![12, 24]);
-                if config.save().await.is_err() {
-                    tracing::warn!("failed to save generated config")
+                    .insert(IpAddr::from_str("127.0.0.1").unwrap(), vec![0]);
+                if let Err(error) = config.save().await {
+                    tracing::warn!("failed to save generated config\n{}", error);
                 }
                 config
             }

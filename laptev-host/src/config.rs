@@ -18,11 +18,11 @@ impl Config {
                 tracing::info!("configuration loaded from laptev.config");
                 config
             }
-            Err(_) => {
-                tracing::info!("failed to load configuration");
+            Err(error) => {
+                tracing::warn!("failed to load configuration\n{}", error);
                 let config = Self::generate();
-                if config.save().await.is_err() {
-                    tracing::warn!("failed to save generated config")
+                if let Err(error) = config.save().await {
+                    tracing::warn!("failed to save generated config\n{}", error);
                 }
                 config
             }

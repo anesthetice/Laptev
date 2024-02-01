@@ -153,7 +153,7 @@ async fn download(
         })?;
     
     // unwrapping because this should never fail
-    let response = EncryptedMessage::new(&bincode::serialize(&body).unwrap(), cipher).unwrap();
+    let response = EncryptedMessage::new(&body, &cipher).unwrap();
     println!("\nencrypted : {:?}\n\ndecrypted : {:?}", response, response.try_decrypt(&cipher).unwrap());
     Ok::<_, Error>(Bytes::from(response.into_bytes()))
 }
