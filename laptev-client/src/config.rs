@@ -1,15 +1,14 @@
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, net::IpAddr, str::FromStr};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use std::{collections::HashMap, io::{Read, Write}, net::IpAddr, str::FromStr};
 
-#[derive(Serialize, Deserialize, Default)]
+#[derive(Serialize, Deserialize, Default, Clone)]
 pub struct Config {
     pub entries: HashMap<IpAddr, Vec<u8>>,
 }
 
 impl Config {
-    pub async fn new() -> Self {
-        match Self::load().await {
+    pub fn new() -> Self {
+        match Self::load() {
             Ok(config) => {
                 tracing::info!("configuration loaded from laptev.config");
                 config
@@ -20,7 +19,7 @@ impl Config {
                 config
                     .entries
                     .insert(IpAddr::from_str("127.0.0.1").unwrap(), vec![0]);
-                if let Err(error) = config.save().await {
+                if let Err(error) = config.save() {
                     tracing::warn!("failed to save generated config\n{}", error);
                 }
                 config
@@ -28,28 +27,25 @@ impl Config {
         }
     }
 
-    async fn save(&self) -> anyhow::Result<()> {
-        let _ = tokio::fs::OpenOptions::new()
+    fn save(&self) -> anyhow::Result<()> {
+        let _ = std::fs::OpenOptions::new()
             .create(true)
             .write(true)
             .truncate(true)
-            .open("laptev.config")
-            .await?
-            .write_all(&serde_json::to_vec_pretty(&self)?)
-            .await?;
+            .open("laptev.config")?
+            .write_all(&serde_json::to_vec_pretty(&self)?)?;
 
         Ok(())
     }
 
-    pub async fn load() -> anyhow::Result<Self> {
+    fn load() -> anyhow::Result<Self> {
         let mut buffer: Vec<u8> = Vec::with_capacity(1024);
-        tokio::fs::OpenOptions::new()
+        std::fs::OpenOptions::new()
             .create(false)
             .read(true)
-            .open("laptev.config")
-            .await?
-            .read_to_end(&mut buffer)
-            .await?;
+            .open("laptev.config")?
+            .read_to_end(&mut buffer)?;
+
         Ok(serde_json::from_slice(&buffer)?)
     }
 }

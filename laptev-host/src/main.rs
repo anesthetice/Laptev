@@ -19,7 +19,7 @@ async fn main() {
     let shared_state: SharedState = Arc::new(RwLock::new(AppState::new().await));
 
     let router = Router::new()
-        .merge(crate::web::status::routes_status())
+        .merge(crate::web::status::routes_status(shared_state.clone()))
         .merge(crate::web::handshake::routes_handshake(shared_state.clone())
         .merge(crate::web::handler::routes_handler(shared_state.clone()))
     );

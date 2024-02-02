@@ -1,19 +1,20 @@
 use aes_gcm_siv::{Aes256GcmSiv, KeyInit};
 use rand::{rngs::StdRng, SeedableRng};
 use reqwest::{Method, StatusCode, Url};
-use std::{net::SocketAddr, str::FromStr};
+use tracing::warn;
+use std::{fmt::Debug, net::SocketAddr, str::FromStr, sync::Arc};
 use x25519_dalek::{EphemeralSecret, PublicKey};
 
 mod config;
 use config::Config;
 mod data;
-use data::external::EncryptedMessage;
+use data::{external::EncryptedMessage, internal::SharedCipher};
 mod error;
 use error::Error;
 mod utils;
 
 
-/*
+
 #[tokio::main]
 async fn main() -> iced::Result {
     tracing_subscriber::fmt()
@@ -33,134 +34,143 @@ async fn main() -> iced::Result {
     };
     Laptev::run(settings)
 }
-*/
 
-#[tokio::main]
-async fn main() {
-    tracing_subscriber::fmt()
-    .with_max_level(tracing::Level::INFO)
-    .compact()
-    .init();
-
-    let config = Config::new().await;
-    let socket_addr  = SocketAddr::from_str("127.0.0.1:12675").unwrap();
-
-    let cipher = authenticate(&socket_addr, &config).await.unwrap();
-
-    let client = reqwest::Client::new();
-    let request = reqwest::Request::new(Method::DELETE, Url::from_str("http://127.0.0.1:12675/delete/1234").unwrap());
-    
-    let response = reqwest::RequestBuilder::from_parts(client, request)
-        .send()
-        .await;
-
-    println!("{:?}", response);
-}
-
-async fn authenticate(socket_address: &SocketAddr, config: &Config) -> error::Result<Aes256GcmSiv> {
-    use error::HandshakeFailedReason as HFR;
-    let base_url: String = format!("http://{}/", socket_address.to_string());
-
-    // step 1, checking if the server is online
-    let url: String = format!("{}status", base_url);
-    let response = reqwest::get(&url).await.or_else(|error| {
-        tracing::error!("{}", error);
-        Err(Error::HandshakeFailed(HFR::ServerOffline))
-    })?;
-    if response.status() != StatusCode::OK {
-        return Err(Error::HandshakeFailed(HFR::ServerOffline));
-    }
-
-    // step 2, checking we have the password to the server
-    let password = config
-        .entries
-        .get(&socket_address.ip())
-        .ok_or(Error::HandshakeFailed(HFR::UknownServer))?;
-
-    // step 3, key exchange
-    let url: String = format!("{}handshake/0", base_url);
-    let client_private_key = EphemeralSecret::random_from_rng(StdRng::from_entropy());
-    let client_public_key = PublicKey::from(&client_private_key);
-
-    let client = reqwest::Client::new();
-    let request = reqwest::Request::new(Method::PUT, Url::from_str(url.as_str()).unwrap());
-
-    let response = reqwest::RequestBuilder::from_parts(client, request)
-        .body(client_public_key.as_bytes().to_vec())
-        .send()
-        .await
-        .or_else(|error| {
-            tracing::error!("{}", error);
-            Err(Error::HandshakeFailed(HFR::KeyExchangeFailed))
-        })?;
-
-    let body = response.bytes().await.or_else(|error| {
-        tracing::error!("{}", error);
-        Err(Error::HandshakeFailed(HFR::KeyExchangeFailed))
-    })?;
-
-    let mut server_public_key: [u8; 32] = [0; 32];
-    if body.len() != 32 {
-        tracing::error!("did not receive a 32-byte key from the server");
-        return Err(Error::HandshakeFailed(HFR::KeyExchangeFailed));
-    }
-    for (idx, byte) in body.into_iter().enumerate() {
-        server_public_key[idx] = byte;
-    }
-    let server_public_key = PublicKey::from(server_public_key);
-
-    // step 4, building the cipher
-    // we can unwrap since at this point it is guaranteed that our key will be 32-bytes
-    let cipher = Aes256GcmSiv::new_from_slice(
-        client_private_key
-            .diffie_hellman(&server_public_key)
-            .as_bytes(),
-    )
-    .unwrap();
-
-    // step 5, authentication
-    let url: String = format!("{}handshake/1", base_url);
-    let client = reqwest::Client::new();
-    let request = reqwest::Request::new(Method::PUT, Url::from_str(url.as_str()).unwrap());
-
-    let resp = reqwest::RequestBuilder::from_parts(client, request)
-        .body(
-            EncryptedMessage::new(password.as_ref(), &cipher)
-                .unwrap()
-                .into_bytes(),
-        )
-        .send()
-        .await
-        .or_else(|error| {
-            tracing::error!("{}", error);
-            Err(Error::HandshakeFailed(HFR::AuthenticationFailed))
-        })?;
-
-    if resp.status() == StatusCode::OK {
-        Ok(cipher)
-    } else {
-        Err(Error::HandshakeFailed(HFR::AuthenticationFailed))
-    }
-}
-
-/*
 use iced::{
-    alignment, color,
-    theme::Palette,
-    widget::{button, column, image, text, text_input},
-    Application, Command, Theme,
+    alignment, color, theme::Palette, widget::{button, column, image, text, text_input}, Application, Command, Size, Theme
 };
 
 struct Laptev {
+    // the configuration for laptev
+    config: Config,
+    // the app's mode, dictates what will be drawn
     mode: Mode,
+    // the desired socket address that is manipulated by the app's user at runtime
     socket_address: String,
+    // Option<> becaue we don't always have a cipher
+    // Arc<> because we only need to borrow immutably the cipher afterwards
+    cipher: Option<SharedCipher>,
+    // represents the entries shown when our app is synced, u64: timestamp, Vec<u8> thumbnail
+    entries: Vec<(u64, Vec<u8>)>,
+}
+
+impl Laptev {
+    fn get_socket_address(&self) -> error::Result<SocketAddr> {
+        SocketAddr::from_str(&self.socket_address).or_else(|error| {
+            tracing::warn!("{}", error);
+            Err(Error::InvalidSocketAddr)
+        })
+    }
+    fn clear(&mut self) {
+        self.mode = Mode::Initial;
+        self.cipher = None;
+        self.entries.drain(..);
+    }
+    async fn authenticate(socket_address: SocketAddr, config: Config) -> error::Result<SharedCipher> {
+        use error::HandshakeFailedReason as HFR;
+        let base_url: String = format!("http://{}/", socket_address.to_string());
+    
+        // step 1, checking if the server is online
+        let url: String = format!("{}status", base_url);
+        let response = reqwest::get(&url).await.or_else(|error| {
+            tracing::error!("{}", error);
+            Err(Error::HandshakeFailed(HFR::ServerNotResponding))
+        })?;
+    
+        // step 2, checking we have the password to the server
+        let password = config
+            .entries
+            .get(&socket_address.ip())
+            .ok_or(Error::HandshakeFailed(HFR::UknownServer))?;
+    
+        // step 3, key exchange
+        let url: String = format!("{}handshake/0", base_url);
+        let client_private_key = EphemeralSecret::random_from_rng(StdRng::from_entropy());
+        let client_public_key = PublicKey::from(&client_private_key);
+    
+        let client = reqwest::Client::new();
+        let request = reqwest::Request::new(Method::PUT, Url::from_str(url.as_str()).unwrap());
+    
+        let response = reqwest::RequestBuilder::from_parts(client, request)
+            .body(client_public_key.as_bytes().to_vec())
+            .send()
+            .await
+            .or_else(|error| {
+                tracing::error!("{}", error);
+                Err(Error::HandshakeFailed(HFR::KeyExchangeFailed))
+            })?;
+    
+        let body = response.bytes().await.or_else(|error| {
+            tracing::error!("{}", error);
+            Err(Error::HandshakeFailed(HFR::KeyExchangeFailed))
+        })?;
+    
+        let mut server_public_key: [u8; 32] = [0; 32];
+        if body.len() != 32 {
+            tracing::error!("did not receive a 32-byte key from the server");
+            return Err(Error::HandshakeFailed(HFR::KeyExchangeFailed));
+        }
+        for (idx, byte) in body.into_iter().enumerate() {
+            server_public_key[idx] = byte;
+        }
+        let server_public_key = PublicKey::from(server_public_key);
+    
+        // step 4, building the cipher
+        // we can unwrap since at this point it is guaranteed that our key will be 32-bytes
+        let symetric_key = client_private_key.diffie_hellman(&server_public_key)
+            .as_bytes()
+            .to_owned();
+        let cipher = Aes256GcmSiv::new_from_slice(&symetric_key).unwrap();
+    
+        // step 5, authentication
+        let url: String = format!("{}handshake/1", base_url);
+        let client = reqwest::Client::new();
+        let request = reqwest::Request::new(Method::PUT, Url::from_str(url.as_str()).unwrap());
+    
+        let response = reqwest::RequestBuilder::from_parts(client, request)
+            .body(
+                EncryptedMessage::new(password.as_ref(), &cipher)
+                    .unwrap()
+                    .into_bytes(),
+            )
+            .send()
+            .await
+            .or_else(|error| {
+                tracing::error!("{}", error);
+                Err(Error::HandshakeFailed(HFR::AuthenticationFailed))
+            })?;
+    
+        if response.status() == StatusCode::OK {
+            Ok(SharedCipher::new(cipher))
+        } else {
+            Err(Error::HandshakeFailed(HFR::AuthenticationFailed))
+        }
+    }
+    async fn sync(socket_address: SocketAddr, cipher: Arc<Aes256GcmSiv>) -> error::Result<Vec<(u64, Vec<u8>)>> {
+        let url: String = format!("http://{}/sync", socket_address.to_string());
+        let response = reqwest::get(Url::from_str(&url).unwrap())
+            .await
+            .or_else(|error| {
+                tracing::warn!("{}", error);
+                Err(Error::ServerNotResponding)
+            })?;
+        if response.status() == StatusCode::FORBIDDEN {
+            return Err(Error::Forbidden)
+        }
+        
+        let response = EncryptedMessage::try_from_bytes(&response.bytes().await.unwrap()).unwrap();
+        
+        Ok(bincode::deserialize(&response.try_decrypt(&cipher).unwrap()).unwrap())
+        }
 }
 
 impl Default for Laptev {
     fn default() -> Self {
         Self {
+            config: Config::new(),
             mode: Mode::Initial,
             socket_address: String::new(),
+            cipher: None,
+            entries: Vec::new(),
         }
     }
 }
@@ -196,7 +206,45 @@ impl iced::Application for Laptev {
                 self.socket_address = string;
                 Command::none()
             }
-            Message::None => Command::none(),
+            Message::SyncEvent => {
+                // first checks that we have a valid socket address
+                match self.get_socket_address() {
+                    Ok(socket_address) => {
+                        let config = self.config.clone();
+                        Command::batch([
+                            iced::window::resize(Size::new(300, 400)),
+                            Command::perform(async move {
+                                Self::authenticate(socket_address, config).await
+                            }, Message::SyncAttempt)
+                        ])
+                    },
+                    Err(error) => {
+                        tracing::warn!("{}", error);
+                        Command::none()
+                    }
+                }
+            }
+            Message::SyncAttempt(result) => {
+                match result {
+                    Ok(shared_cipher) => {
+                        println!("success");
+                    },
+                    Err(error) => {
+                        warn!("{}", error);
+                    }
+                }
+                Command::none()
+            }
+            Message::SyncSuccess => {
+                self.mode = Mode::Synced;
+                Command::none()
+            }
+            Message::SyncFailure => {
+                self.mode = Mode::Initial;
+                self.cipher = None;
+                self.entries.drain(..);
+                Command::none()
+            }
         }
     }
 
@@ -205,10 +253,10 @@ impl iced::Application for Laptev {
             image("./res/icon-clear.png").width(175).height(175),
             text_input("address:port", self.socket_address.as_str())
                 .on_input(Message::SocketAddrInputUpdate)
-                .on_submit(Message::None)
+                .on_submit(Message::SyncEvent)
                 .padding([10, 5]),
             button(text("connect").horizontal_alignment(alignment::Horizontal::Center))
-                .on_press(Message::None)
+                .on_press(Message::SyncEvent)
                 .padding(5)
                 .width(75),
         ]
@@ -221,14 +269,21 @@ impl iced::Application for Laptev {
 
 #[derive(Debug, Clone)]
 enum Message {
-    None,
     SocketAddrInputUpdate(String),
+    /// when the user wants to sync
+    SyncEvent,
+    /// when the application wants to sync
+    SyncAttempt(error::Result<SharedCipher>),
+    /// when the sync was successfull
+    SyncSuccess,
+    /// when the sync was unsuccessfull
+    SyncFailure,
 }
 
 enum Mode {
     Initial,
-    Loading(u8),
-    Loaded,
+    Syncing,
+    Synced
 }
 
 /*
@@ -543,5 +598,4 @@ fn get_default_address() -> String {
     }
     return address;
 }
-*/
 */

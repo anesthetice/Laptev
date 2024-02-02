@@ -2,13 +2,16 @@ use core::fmt;
 
 pub type Result<T> = core::result::Result<T, Error>;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Error {
+    Forbidden,
     HandshakeFailed(HandshakeFailedReason),
+    InvalidSocketAddr,
+    ServerNotResponding,
 }
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum HandshakeFailedReason {
-    ServerOffline,
+    ServerNotResponding,
     UknownServer,
     KeyExchangeFailed,
     AuthenticationFailed,
@@ -23,10 +26,13 @@ impl fmt::Display for Error {
 impl std::error::Error for Error {
     fn description(&self) -> &str {
         match self {
+            Self::Forbidden => "not authenticated to server",
             Self::HandshakeFailed(reason) => {
                 use HandshakeFailedReason as HFR;
                 match reason {
-                    HFR::ServerOffline => "could not connect to server",
+                    HFR::ServerNotResponding => {
+                        "could not connect to server"
+                    },
                     HFR::UknownServer => {
                         "could not retrieve the password to the server from configuration"
                     }
@@ -37,7 +43,9 @@ impl std::error::Error for Error {
                         "could not authenticate, password probably incorrect"
                     }
                 }
-            }
+            },
+            Self::InvalidSocketAddr => "not a valid socket addr",
+            Self::ServerNotResponding => "could not connect to server",
         }
     }
 }
