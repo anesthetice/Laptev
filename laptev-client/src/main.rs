@@ -8,7 +8,7 @@ use x25519_dalek::{EphemeralSecret, PublicKey};
 mod config;
 use config::Config;
 mod data;
-use data::{external::EncryptedMessage, internal::SharedCipher};
+use data::{external::EncryptedMessage, internal::{Entries, SharedCipher}};
 mod error;
 use error::Error;
 mod utils;
@@ -18,7 +18,7 @@ mod utils;
 #[tokio::main]
 async fn main() -> iced::Result {
     tracing_subscriber::fmt()
-        .with_max_level(tracing::Level::INFO)
+        .with_max_level(tracing::Level::WARN)
         .compact()
         .init();
 
@@ -36,7 +36,7 @@ async fn main() -> iced::Result {
 }
 
 use iced::{
-    alignment, color, theme::Palette, widget::{button, column, image, text, text_input}, Application, Command, Size, Theme
+    alignment, color, theme::Palette, widget::{button, column, image, Image, row, text, text_input, Column}, Application, Command, Element, Theme
 };
 
 struct Laptev {
@@ -47,7 +47,6 @@ struct Laptev {
     // the desired socket address that is manipulated by the app's user at runtime
     socket_address: String,
     // Option<> becaue we don't always have a cipher
-    // Arc<> because we only need to borrow immutably the cipher afterwards
     cipher: Option<SharedCipher>,
     // represents the entries shown when our app is synced, u64: timestamp, Vec<u8> thumbnail
     entries: Vec<(u64, Vec<u8>)>,
@@ -65,13 +64,38 @@ impl Laptev {
         self.cipher = None;
         self.entries.drain(..);
     }
+    fn synced_view(&self) -> Element<Message> {
+        let mut Col: Column<Message> = iced::widget::Column::new();
+        for (timestamp, thumbnail) in self.entries.iter() {
+            let entry_widget: iced::widget::Row<Message> = row![
+                image(iced::advanced::image::Handle::from_memory(std::io::Bytes::)))
+                    .width(140)
+                    .height(105),
+                text(timestamp)
+                    .vertical_alignment(alignment::Vertical::Center)
+                    .horizontal_alignment(alignment::Horizontal::Center),
+                button(text("download"))
+                    //.on_press(crate::Message::GetCommand(self.timestamp.unix_timestamp()))
+                    .padding(10)
+                    .style(iced::theme::Button::Positive),
+                button(text("delete"))
+                    //.on_press(crate::Message::DelCommand(self.0))
+                    .padding(10)
+                    .style(iced::theme::Button::Destructive),
+            ]
+            .align_items(alignment::Alignment::Center)
+            .padding(10)
+            .spacing(20);
+        };
+        Col.into()
+    }
     async fn authenticate(socket_address: SocketAddr, config: Config) -> error::Result<SharedCipher> {
         use error::HandshakeFailedReason as HFR;
         let base_url: String = format!("http://{}/", socket_address.to_string());
     
         // step 1, checking if the server is online
         let url: String = format!("{}status", base_url);
-        let response = reqwest::get(&url).await.or_else(|error| {
+        let _ = reqwest::get(&url).await.or_else(|error| {
             tracing::error!("{}", error);
             Err(Error::HandshakeFailed(HFR::ServerNotResponding))
         })?;
@@ -145,8 +169,8 @@ impl Laptev {
             Err(Error::HandshakeFailed(HFR::AuthenticationFailed))
         }
     }
-    async fn sync(socket_address: SocketAddr, cipher: Arc<Aes256GcmSiv>) -> error::Result<Vec<(u64, Vec<u8>)>> {
-        let url: String = format!("http://{}/sync", socket_address.to_string());
+    async fn sync(socket_address: SocketAddr, cipher: SharedCipher) -> error::Result<Entries> {
+        let url: String = format!("http://{}/synchronize", socket_address.to_string());
         let response = reqwest::get(Url::from_str(&url).unwrap())
             .await
             .or_else(|error| {
@@ -168,7 +192,7 @@ impl Default for Laptev {
         Self {
             config: Config::new(),
             mode: Mode::Initial,
-            socket_address: String::new(),
+            socket_address: String::from(":12675"),
             cipher: None,
             entries: Vec::new(),
         }
@@ -210,9 +234,11 @@ impl iced::Application for Laptev {
                 // first checks that we have a valid socket address
                 match self.get_socket_address() {
                     Ok(socket_address) => {
+                        self.mode = Mode::Syncing;
                         let config = self.config.clone();
                         Command::batch([
-                            iced::window::resize(Size::new(300, 400)),
+                            // WARNING DISABLED DUE TO HYPRLAND ISSUES RE-ENABLE LATER
+                            //iced::window::resize(Size::new(300, 400)),
                             Command::perform(async move {
                                 Self::authenticate(socket_address, config).await
                             }, Message::SyncAttempt)
@@ -227,229 +253,51 @@ impl iced::Application for Laptev {
             Message::SyncAttempt(result) => {
                 match result {
                     Ok(shared_cipher) => {
-                        println!("success");
+                        self.cipher = Some(shared_cipher.clone());
+                        let socket_address = self.get_socket_address().unwrap();
+
+                        Command::perform(async move {
+                            Self::sync(socket_address, shared_cipher).await
+                        }, Message::SyncOutput)
                     },
                     Err(error) => {
+                        self.mode = Mode::Initial;
                         warn!("{}", error);
+                        Command::none()
+                    }
+                }
+            }
+            Message::SyncOutput(result) => {
+                match result {
+                    Ok(entries) => {
+                        self.entries.extend(entries);
+                        self.mode = Mode::Synced;
+                    },
+                    Err(error) => {
+                        tracing::warn!("{}", error);
+                        self.clear();
+                        self.mode = Mode::Initial;
                     }
                 }
                 Command::none()
-            }
-            Message::SyncSuccess => {
-                self.mode = Mode::Synced;
-                Command::none()
-            }
-            Message::SyncFailure => {
-                self.mode = Mode::Initial;
-                self.cipher = None;
-                self.entries.drain(..);
+            },
+            Message::Return => {
+                self.clear();
                 Command::none()
             }
         }
     }
-
     fn view(&self) -> iced::Element<'_, Self::Message, iced::Renderer<Self::Theme>> {
-        column![
-            image("./res/icon-clear.png").width(175).height(175),
-            text_input("address:port", self.socket_address.as_str())
-                .on_input(Message::SocketAddrInputUpdate)
-                .on_submit(Message::SyncEvent)
-                .padding([10, 5]),
-            button(text("connect").horizontal_alignment(alignment::Horizontal::Center))
-                .on_press(Message::SyncEvent)
-                .padding(5)
-                .width(75),
-        ]
-        .align_items(alignment::Alignment::Center)
-        .padding(20)
-        .spacing(10)
-        .into()
-    }
-}
-
-#[derive(Debug, Clone)]
-enum Message {
-    SocketAddrInputUpdate(String),
-    /// when the user wants to sync
-    SyncEvent,
-    /// when the application wants to sync
-    SyncAttempt(error::Result<SharedCipher>),
-    /// when the sync was successfull
-    SyncSuccess,
-    /// when the sync was unsuccessfull
-    SyncFailure,
-}
-
-enum Mode {
-    Initial,
-    Syncing,
-    Synced
-}
-
-/*
-use iced::{
-    theme,
-    widget::{button, column, text_input, text, image, row, container, horizontal_rule, rule, scrollable},
-    alignment,
-    Application,
-    Theme,
-    Command,
-    Element,
-    Settings,
-    window::{self, icon},
-    theme::Palette, color,
-};
-use iced_futures::backend::native::tokio as tokio_iced;
-use iced_native::command::Action;
-use iced_native::window::Action as WindowAction;
-
-pub struct Connection {
-    stream: TcpStream,
-    rng: StdRng,
-    cipher: Aes256GcmSiv,
-}
-
-
-#[derive(Debug, Clone, Copy)]
-enum ConnectedState {
-    Synced,
-    Syncing
-}
-
-#[derive(Debug, Clone)]
-enum Mode {
-    Disconnected,
-    AttemptingConnection,
-    Connected(Arc<Mutex<Connection>>, ConnectedState),
-}
-
-struct Laptev {
-    address: String,
-    mode: Mode,
-    recordings: ClientEntries,
-}
-
-impl Laptev {
-    pub fn default() -> Self {
-        return Laptev {
-            address: get_default_address(),
-            mode: Mode::Disconnected,
-            recordings: ClientEntries::default(),
-        };
-    }
-}
-
-impl Application for Laptev {
-    type Executor = tokio_iced::Executor;
-    type Flags = ();
-    type Message = Message;
-    type Theme = Theme;
-
-    fn new(_flags: ()) -> (Laptev, Command<Self::Message>) {
-        (Laptev::default(), Command::none())
-    }
-
-    fn update(&mut self, message: Message) -> Command<Self::Message> {
-        match message {
-            Message::AddressInputChanged(string) => {
-                self.address = string;
-                Command::none()
-            },
-            Message::Connect => {
-                self.mode = Mode::AttemptingConnection;
-                let address_clone: String = self.address.clone();
-                Command::perform(Connection::new(address_clone), Message::ConnectionAttempt)
-            },
-            Message::Disconnect => {
-                // I think this should drop the entire Connection structure
-                self.mode = Mode::Disconnected;
-                self.recordings.clear();
-                Command::single(Action::Window(WindowAction::Resize { width: 300, height: 400 }))
-            },
-            Message::ConnectionAttempt(attempt) => {
-                match &attempt {
-                    Some(connection_arc_mutex) => {
-                        self.mode = Mode::Connected(connection_arc_mutex.clone(), ConnectedState::Syncing);
-                        Command::batch([
-                            Command::single(Action::Window(WindowAction::Resize { width: 650, height: 720 })),
-                            Command::perform(Connection::sync_with_host(connection_arc_mutex.clone()), Message::SyncDone),
-                            ])
-                    },
-                    None => {
-                        self.mode = Mode::Disconnected;
-                        Command::none()
-                    },
-                }
-
-            },
-            Message::SyncWithHost => {
-                match self.mode.clone() {
-                    Mode::Connected(connection_arc_mutex, _) => {
-                        self.mode = Mode::Connected(connection_arc_mutex.clone(), ConnectedState::Syncing);
-                        Command::perform(Connection::sync_with_host(connection_arc_mutex.clone()), Message::SyncDone)
-                    },
-                    _ => Command::none(),
-                }
-            },
-            Message::SyncDone(data) => {
-                match &self.mode {
-                    Mode::Connected(connection, _) => {
-                        let mut host_entries : HostEntries = serde_json::from_slice(&data).unwrap_or(HostEntries::new_empty());
-                        host_entries.0.sort_by_key(|entry| {entry.timestamp});
-                        host_entries.0.reverse();
-                        self.recordings = ClientEntries::from_host_entries(host_entries);
-                        self.mode = Mode::Connected(connection.clone(), ConnectedState::Synced);
-                    },
-                    _ => {},
-                }
-                Command::none()
-            },
-            Message::CancelSync => {
-                match &self.mode {
-                    Mode::Connected(connection, _) => {
-                        self.mode = Mode::Connected(connection.clone(), ConnectedState::Synced);
-                    },
-                    _ => {},
-                }
-                Command::none()
-            },
-            Message::GetCommand(timestamp) => {
-                match self.mode.clone() {
-                    Mode::Connected(connection_arc_mutex, _) => {
-                        self.mode = Mode::Connected(connection_arc_mutex.clone(), ConnectedState::Synced);
-                        Command::perform(Connection::get(connection_arc_mutex.clone(), timestamp), Message::Blank)
-                    },
-                    _ => Command::none(),
-                }
-            },
-            Message::DelCommand(timestamp) => {
-                match self.mode.clone() {
-                    Mode::Connected(connection_arc_mutex, _) => {
-                        self.mode = Mode::Connected(connection_arc_mutex.clone(), ConnectedState::Synced);
-                        Command::perform(Connection::process_and_send(connection_arc_mutex.clone(), format!("DELETE {}", timestamp)), Message::Blank)
-                    },
-                    _ => Command::none(),
-                }
-            },
-            Message::Blank(()) => {
-                Command::none()
-            },
-        }
-    }
-
-    fn view(&self) -> Element<Self::Message> {
         match self.mode {
-            Mode::Disconnected => {
+            Mode::Initial => {
                 column![
-                    image("./res/icon-clear.png")
-                        .width(175)
-                        .height(175),
-                    text_input("address:port", self.address.as_str())
-                        .on_input(Message::AddressInputChanged)
-                        .on_submit(Message::Connect)
+                    image("./res/icon-clear.png").width(175).height(175),
+                    text_input("address:port", self.socket_address.as_str())
+                        .on_input(Message::SocketAddrInputUpdate)
+                        .on_submit(Message::SyncEvent)
                         .padding([10, 5]),
                     button(text("connect").horizontal_alignment(alignment::Horizontal::Center))
-                        .on_press(Message::Connect)
+                        .on_press(Message::SyncEvent)
                         .padding(5)
                         .width(75),
                 ]
@@ -458,7 +306,7 @@ impl Application for Laptev {
                 .spacing(10)
                 .into()
             },
-            Mode::AttemptingConnection => {
+            Mode::Syncing => {
                 column![
                     image("./res/icon-clear.png")
                         .width(175)
@@ -470,132 +318,60 @@ impl Application for Laptev {
                         .horizontal_alignment(alignment::Horizontal::Center)
                         .vertical_alignment(alignment::Vertical::Center),
                     button(text("cancel"))
-                        .on_press(Message::Disconnect)
+                        //.on_press(Message::Disconnect)
                         .padding(10)
-                        .style(theme::Button::Destructive),
-                    horizontal_rule(1)
-                        .style(iced::theme::Rule::Custom(Box::new(HorizontalRuleCustomStyle)))
+                        .style(iced::theme::Button::Destructive),
                 ]
                 .align_items(alignment::Alignment::Center)
                 .padding(20)
                 .spacing(10)
                 .into()
             },
-            Mode::Connected(_, state) => {
-                match state {
-                    ConnectedState::Syncing => {
-                        column![
-                            image("./res/icon-clear.png")
-                                .width(175)
-                                .height(175),
-                            text("synchronizing with server")
-                                .horizontal_alignment(alignment::Horizontal::Center)
-                                .vertical_alignment(alignment::Vertical::Center),
-                            text("...")
-                                .horizontal_alignment(alignment::Horizontal::Center)
-                                .vertical_alignment(alignment::Vertical::Center),
-                            button(text("cancel"))
-                                .on_press(Message::CancelSync)
-                                .padding(10)
-                                .style(theme::Button::Destructive),
-                            horizontal_rule(1)
-                                .style(iced::theme::Rule::Custom(Box::new(HorizontalRuleCustomStyle))),
-                        ]
-                        .align_items(alignment::Alignment::Center)
-                        .padding(20)
-                        .spacing(10)
-                        .into()
-                    },
-                    ConnectedState::Synced => {
-                        let content = self.recordings.to_column();
-                        column![
-                            row![
-                                button(text("synchronize").horizontal_alignment(alignment::Horizontal::Center))
-                                    .on_press(Message::SyncWithHost)
-                                    .padding(5),
+            Mode::Synced => {
+                //let content = self.recordings.to_column();
+                column![
+                    row![
+                        button(text("synchronize").horizontal_alignment(alignment::Horizontal::Center))
+                            .on_press(Message::SyncEvent)
+                            .padding(5),
+                        image("./res/icon-clear.png")
+                            .width(75)
+                            .height(75),
 
-                                image("./res/icon-clear.png")
-                                    .width(75)
-                                    .height(75),
-
-                                button(text("disconnect").horizontal_alignment(alignment::Horizontal::Center))
-                                    .on_press(Message::Disconnect)
-                                    .padding(5),
-                            ]
-                            .padding(10)
-                            .spacing(20)
-                            .align_items(alignment::Alignment::Center),
-
-                            horizontal_rule(1)
-                                .style(iced::theme::Rule::Custom(Box::new(HorizontalRuleCustomStyle))),
-
-                            scrollable(container(content).width(iced::Length::Fill).center_x())
-                        ]
-                        .align_items(alignment::Alignment::Center)
-                        .padding(20)
-                        .spacing(10)
-                        .into()
-                    },
-                }
-            },
+                        button(text("disconnect").horizontal_alignment(alignment::Horizontal::Center))
+                            //.on_press(Message::Disconnect)
+                            .padding(5),
+                    ]
+                    .padding(10)
+                    .spacing(20)
+                    .align_items(alignment::Alignment::Center),
+                    /*
+                    horizontal_rule(1)
+                        .style(iced::theme::Rule::Custom(Box::new(HorizontalRuleCustomStyle))),
+                    scrollable(container(content).width(iced::Length::Fill).center_x())
+                    */
+                ]
+                .align_items(alignment::Alignment::Center)
+                .padding(20)
+                .spacing(10)
+                .into()
+            }
         }
+
     }
 }
 
 #[derive(Debug, Clone)]
-pub enum Message {
-    AddressInputChanged(String),
-
-    Connect,
-    Disconnect,
-    ConnectionAttempt(Option<Arc<Mutex<Connection>>>),
-
-    SyncWithHost,
-    SyncDone(Vec<u8>),
-    CancelSync,
-
-    GetCommand(i64),
-    DelCommand(i64),
-
-    Blank(()),
+enum Message {
+    SocketAddrInputUpdate(String),
+    SyncEvent,
+    SyncAttempt(error::Result<SharedCipher>),
+    SyncOutput(error::Result<Entries>),
+    Return,
 }
 
-#[tokio::main]
-async fn main() -> iced::Result {
-    ls_initialize(&CLIENT_PRIVATE_KEY);
-    ls_initialize(&LOCAL_OFFSET);
-
-    let settings: iced::Settings<()> = Settings {
-        window: window::Settings {
-            size: (300, 400),
-            resizable: true,
-            decorations: true,
-            icon: Some(icon::from_file("./res/icon-chilly.png").unwrap()),
-            ..Default::default()
-        },
-        ..Default::default()
-    };
-    Laptev::run(settings)
+enum Mode {
+    Initial,
+    Syncing,
+    Synced
 }
-
-
-// "invisible" horizontal line so that the center alignment works correctly
-struct HorizontalRuleCustomStyle;
-impl rule::StyleSheet for HorizontalRuleCustomStyle {
-    type Style = Theme;
-    fn appearance(&self, style: &Self::Style) -> rule::Appearance {
-        rule::Appearance { color: color!(229, 241, 237), width: 1, radius: 0.0, fill_mode: rule::FillMode::Full }
-    }
-}
-
-fn get_default_address() -> String {
-    let mut address: String = String::new();
-    match std::fs::OpenOptions::new().read(true).open("default_address.config") {
-        Ok(mut file) => {
-            file.read_to_string(&mut address);
-        },
-        Err(..) => (),
-    }
-    return address;
-}
-*/

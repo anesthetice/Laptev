@@ -8,9 +8,8 @@ author = "anesthetice"
 
 # main
 reqwest             =   {version = "0.11.23"}
-iced                =   {version = "0.10.*", features = ["image"]}
+iced                =   {version = "0.10.*", features = ["advanced", "image"]}
 iced_futures        =   {version = "0.7.*", features = ["tokio"]}
-#iced_native         =   {version = "0.10.3"}
 time                =   {version = "0.3.20", features = ["local-offset"]}
 tokio               =   {version = "1.27.*", features = ["full"]}
 
