@@ -1,4 +1,5 @@
 use aes_gcm_siv::Aes256GcmSiv;
+use iced::{widget::{image, row}, Element};
 use std::sync::Arc;
 
 #[derive(Clone)]
@@ -23,8 +24,102 @@ impl core::fmt::Debug for SharedCipher {
     }
 }
 
-pub type Entry = (u64, Vec<u8>);
-pub type Entries = Vec<Entry>;
+#[derive(Clone)]
+pub struct Entries (Vec<Entry>);
+
+impl std::fmt::Debug for Entries {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Entries")
+    }
+}
+
+impl std::ops::Deref for Entries {
+    type Target = Vec<Entry>;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl std::ops::DerefMut for Entries {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.0.as_mut()
+    }
+}
+
+impl IntoIterator for Entries {
+    type Item = Entry;
+    type IntoIter = Vec<Self::Item>;
+    fn into_iter(self) -> Self::IntoIter {
+        self
+    }
+}
+
+impl FromIterator<Entry> for Entries {
+    fn from_iter<T: IntoIterator<Item = Entry>>(iter: T) -> Self {
+        let mut collection: Self =  Self(Vec::new());
+        for element in iter {
+            collection.push(element);
+        }
+        collection
+    }
+}
+
+impl From<Vec<(u64, Vec<u8>)>> for Entries {
+    fn from(value: Vec<(u64, Vec<u8>)>) -> Self {
+        value
+            .into_iter()
+            .map(|val| {
+                Entry::from(val)
+            })
+            .collect::<Self>()
+    }
+}
+
+#[derive(Clone)]
+pub struct Entry {
+    timestamp: u64,
+    thumbnail: Thumbnail,
+}
+
+impl From<(u64, Vec<u8>)> for Entry {
+    fn from(value: (u64, Vec<u8>)) -> Self {
+        Self { timestamp: value.0, thumbnail: Thumbnail::from(value.1) }
+    }
+}
+
+impl Entry {
+    fn to_widget(&self) -> Element<crate::Message> {
+        row![
+            image(image::Handle::from_memory(self.thumbnail))
+        ]
+        .into()
+    }
+}
+
+
+#[derive(Clone)]
+pub struct Thumbnail (Arc<Vec<u8>>);
+
+impl std::ops::Deref for Thumbnail {
+    type Target = Vec<u8>;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl AsRef<[u8]> for Thumbnail {
+    fn as_ref(&self) -> &[u8] {
+        self
+    }
+}
+
+impl From<Vec<u8>> for Thumbnail {
+    fn from(value: Vec<u8>) -> Self {
+        Self(Arc::new(value))
+    }
+}
+
+
 
 /*
 pub struct ClientEntries(Vec<ClientEntry>);

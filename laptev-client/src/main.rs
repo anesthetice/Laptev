@@ -68,9 +68,6 @@ impl Laptev {
         let mut Col: Column<Message> = iced::widget::Column::new();
         for (timestamp, thumbnail) in self.entries.iter() {
             let entry_widget: iced::widget::Row<Message> = row![
-                image(iced::advanced::image::Handle::from_memory(std::io::Bytes::)))
-                    .width(140)
-                    .height(105),
                 text(timestamp)
                     .vertical_alignment(alignment::Vertical::Center)
                     .horizontal_alignment(alignment::Horizontal::Center),
@@ -183,7 +180,7 @@ impl Laptev {
         
         let response = EncryptedMessage::try_from_bytes(&response.bytes().await.unwrap()).unwrap();
         
-        Ok(bincode::deserialize(&response.try_decrypt(&cipher).unwrap()).unwrap())
+        Ok(Entries::from(bincode::deserialize::<Vec<(u64, Vec<u8>)>>(&response.try_decrypt(&cipher).unwrap()).unwrap()))
         }
 }
 
