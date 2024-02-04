@@ -1,5 +1,5 @@
 use aes_gcm_siv::Aes256GcmSiv;
-use iced::{widget::{image, row}, Element};
+use iced::{alignment, widget::{button, image, row, text}, Element};
 use std::sync::Arc;
 
 #[derive(Clone)]
@@ -25,7 +25,7 @@ impl core::fmt::Debug for SharedCipher {
 }
 
 #[derive(Clone)]
-pub struct Entries (Vec<Entry>);
+pub struct Entries (pub Vec<Entry>);
 
 impl std::fmt::Debug for Entries {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -43,14 +43,6 @@ impl std::ops::Deref for Entries {
 impl std::ops::DerefMut for Entries {
     fn deref_mut(&mut self) -> &mut Self::Target {
         self.0.as_mut()
-    }
-}
-
-impl IntoIterator for Entries {
-    type Item = Entry;
-    type IntoIter = Vec<Self::Item>;
-    fn into_iter(self) -> Self::IntoIter {
-        self
     }
 }
 
@@ -75,10 +67,23 @@ impl From<Vec<(u64, Vec<u8>)>> for Entries {
     }
 }
 
+impl Entries {
+    pub fn new() -> Self {
+        Self(Vec::new())
+    }
+    pub fn to_widget(&self) -> Element<crate::Message> {
+        let mut column: iced::widget::Column<crate::Message> = iced::widget::Column::new();
+        for entry in self.iter() {
+            column = column.push(entry.to_widget());
+        }
+        column.into()
+    }
+}
+
 #[derive(Clone)]
 pub struct Entry {
-    timestamp: u64,
-    thumbnail: Thumbnail,
+    pub timestamp: u64,
+    pub thumbnail: Thumbnail,
 }
 
 impl From<(u64, Vec<u8>)> for Entry {
@@ -90,15 +95,31 @@ impl From<(u64, Vec<u8>)> for Entry {
 impl Entry {
     fn to_widget(&self) -> Element<crate::Message> {
         row![
-            image(image::Handle::from_memory(self.thumbnail))
+            iced::widget::image(iced::widget::image::Handle::from_memory(self.thumbnail.clone()))
+                .width(640)
+                .height(360),
+            text(self.timestamp)
+                .vertical_alignment(alignment::Vertical::Center)
+                .horizontal_alignment(alignment::Horizontal::Center),
+            button(text("download"))
+                //.on_press(crate::Message::GetCommand(self.timestamp.unix_timestamp()))
+                .padding(10)
+                .style(iced::theme::Button::Positive),
+            button(text("delete"))
+                //.on_press(crate::Message::DelCommand(self.0))
+                .padding(10)
+                .style(iced::theme::Button::Destructive),
         ]
+        .align_items(alignment::Alignment::Center)
+        .padding(10)
+        .spacing(20)
         .into()
     }
 }
 
 
 #[derive(Clone)]
-pub struct Thumbnail (Arc<Vec<u8>>);
+pub struct Thumbnail (pub Arc<Vec<u8>>);
 
 impl std::ops::Deref for Thumbnail {
     type Target = Vec<u8>;

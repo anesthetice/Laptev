@@ -2,7 +2,7 @@ use aes_gcm_siv::{Aes256GcmSiv, KeyInit};
 use rand::{rngs::StdRng, SeedableRng};
 use reqwest::{Method, StatusCode, Url};
 use tracing::warn;
-use std::{fmt::Debug, net::SocketAddr, str::FromStr, sync::Arc};
+use std::{fmt::Debug, net::SocketAddr, ops::{Deref, DerefMut}, str::FromStr, sync::Arc};
 use x25519_dalek::{EphemeralSecret, PublicKey};
 
 mod config;
@@ -49,7 +49,7 @@ struct Laptev {
     // Option<> becaue we don't always have a cipher
     cipher: Option<SharedCipher>,
     // represents the entries shown when our app is synced, u64: timestamp, Vec<u8> thumbnail
-    entries: Vec<(u64, Vec<u8>)>,
+    entries: Entries,
 }
 
 impl Laptev {
@@ -63,28 +63,6 @@ impl Laptev {
         self.mode = Mode::Initial;
         self.cipher = None;
         self.entries.drain(..);
-    }
-    fn synced_view(&self) -> Element<Message> {
-        let mut Col: Column<Message> = iced::widget::Column::new();
-        for (timestamp, thumbnail) in self.entries.iter() {
-            let entry_widget: iced::widget::Row<Message> = row![
-                text(timestamp)
-                    .vertical_alignment(alignment::Vertical::Center)
-                    .horizontal_alignment(alignment::Horizontal::Center),
-                button(text("download"))
-                    //.on_press(crate::Message::GetCommand(self.timestamp.unix_timestamp()))
-                    .padding(10)
-                    .style(iced::theme::Button::Positive),
-                button(text("delete"))
-                    //.on_press(crate::Message::DelCommand(self.0))
-                    .padding(10)
-                    .style(iced::theme::Button::Destructive),
-            ]
-            .align_items(alignment::Alignment::Center)
-            .padding(10)
-            .spacing(20);
-        };
-        Col.into()
     }
     async fn authenticate(socket_address: SocketAddr, config: Config) -> error::Result<SharedCipher> {
         use error::HandshakeFailedReason as HFR;
@@ -191,7 +169,7 @@ impl Default for Laptev {
             mode: Mode::Initial,
             socket_address: String::from(":12675"),
             cipher: None,
-            entries: Vec::new(),
+            entries: Entries::new(),
         }
     }
 }
@@ -267,7 +245,7 @@ impl iced::Application for Laptev {
             Message::SyncOutput(result) => {
                 match result {
                     Ok(entries) => {
-                        self.entries.extend(entries);
+                        self.entries.extend(entries.0);
                         self.mode = Mode::Synced;
                     },
                     Err(error) => {
@@ -342,6 +320,8 @@ impl iced::Application for Laptev {
                     .padding(10)
                     .spacing(20)
                     .align_items(alignment::Alignment::Center),
+                    
+                    self.entries.to_widget()
                     /*
                     horizontal_rule(1)
                         .style(iced::theme::Rule::Custom(Box::new(HorizontalRuleCustomStyle))),
