@@ -3,10 +3,15 @@ use crate::{
     error::Error,
 };
 use axum::{
-    body::Bytes, extract::{ConnectInfo, Path, State}, http::StatusCode, response::IntoResponse, routing::{get, delete as del}, Router
+    body::Bytes,
+    extract::{ConnectInfo, Path, State},
+    http::StatusCode,
+    response::IntoResponse,
+    routing::{delete as del, get},
+    Router,
 };
-use tokio::io::AsyncReadExt;
 use std::{net::SocketAddr, path::PathBuf};
+use tokio::io::AsyncReadExt;
 use tower_http::trace::{self, TraceLayer};
 use tracing::Level;
 
@@ -38,8 +43,7 @@ pub fn routes_handler(state: SharedState) -> Router {
 async fn synchronize(
     State(state): State<SharedState>,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
-) -> impl IntoResponse
-{
+) -> impl IntoResponse {
     // checks that the client is authenticated and gets their cipher
     let read_state = state.read().await;
     let cipher = match read_state.db.get(&addr.ip()) {
@@ -50,7 +54,7 @@ async fn synchronize(
                 Err(Error::NotAuthenticated)
             }
         }
-        None => Err(Error::NotAuthenticated)
+        None => Err(Error::NotAuthenticated),
     }?;
 
     // prepares the response
@@ -59,15 +63,24 @@ async fn synchronize(
     if let Ok(mut read_dir) = tokio::fs::read_dir("./data").await {
         while let Ok(Some(entry)) = read_dir.next_entry().await {
             let entry = entry.path();
-            if entry.extension().is_none() {continue}
-            if entry.extension().unwrap().to_str().is_none() {continue}
-            if entry.extension().unwrap().to_str().unwrap() != "jpg" {continue}
-            
-            if entry.file_stem().is_none() {continue}
-            if entry.file_stem().unwrap().to_str().is_none() {continue}
+            if entry.extension().is_none() {
+                continue;
+            }
+            if entry.extension().unwrap().to_str().is_none() {
+                continue;
+            }
+            if entry.extension().unwrap().to_str().unwrap() != "jpg" {
+                continue;
+            }
+
+            if entry.file_stem().is_none() {
+                continue;
+            }
+            if entry.file_stem().unwrap().to_str().is_none() {
+                continue;
+            }
 
             if let Ok(timestamp) = entry.file_stem().unwrap().to_str().unwrap().parse::<u64>() {
-                
                 if let Ok(mut file) = tokio::fs::OpenOptions::new()
                     .create(false)
                     .read(true)
@@ -75,7 +88,9 @@ async fn synchronize(
                     .await
                 {
                     let mut data: Vec<u8> = Vec::new();
-                    if file.read_to_end(&mut data).await.is_ok() {body.push((timestamp, data))}
+                    if file.read_to_end(&mut data).await.is_ok() {
+                        body.push((timestamp, data))
+                    }
                 }
             }
         }
@@ -91,27 +106,30 @@ async fn delete(
     State(state): State<SharedState>,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Path(id): Path<u64>,
-) -> impl IntoResponse
-{
+) -> impl IntoResponse {
     // checks that the client is authenticated
     if let Some(client) = state.read().await.db.get(&addr.ip()) {
         if !client.is_authenticated() {
             return Err(Error::NotAuthenticated);
         }
     } else {
-        return Err(Error::NotAuthenticated)
+        return Err(Error::NotAuthenticated);
     }
 
     // logs the request
     tracing::info!("DELETE REQUEST FOR ENTRY {} FROM {:?}", id, addr);
 
     // attempts to delete the request
-    let filepaths = [PathBuf::from(format!("./data/{}.jpg", id)), PathBuf::from(format!("./data/{}.h264", id))];
-    if tokio::fs::remove_file(&filepaths[0]).await.is_ok() && tokio::fs::remove_file(&filepaths[1]).await.is_ok() {
+    let filepaths = [
+        PathBuf::from(format!("./data/{}.jpg", id)),
+        PathBuf::from(format!("./data/{}.h264", id)),
+    ];
+    if tokio::fs::remove_file(&filepaths[0]).await.is_ok()
+        && tokio::fs::remove_file(&filepaths[1]).await.is_ok()
+    {
         Ok(StatusCode::OK)
-    }
-    else {
-        Err(Error::InternalError)
+    } else {
+        Err(Error::Internal)
     }
 }
 
@@ -119,8 +137,7 @@ async fn download(
     State(state): State<SharedState>,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Path(id): Path<u64>,
-) -> impl IntoResponse
-{
+) -> impl IntoResponse {
     // checks that the client is authenticated and gets their cipher
     let read_state = state.read().await;
     let cipher = match read_state.db.get(&addr.ip()) {
@@ -131,7 +148,7 @@ async fn download(
                 Err(Error::NotAuthenticated)
             }
         }
-        None => Err(Error::NotAuthenticated)
+        None => Err(Error::NotAuthenticated),
     }?;
 
     // prepares the response
@@ -141,18 +158,18 @@ async fn download(
         .read(true)
         .open(format!("./data/{}.h264", id))
         .await
-        .or_else(|error| {
+        .map_err(|error| {
             tracing::warn!("{}", error);
-            Err(Error::InternalError)
+            Error::Internal
         })?
         .read_to_end(&mut body)
         .await
-        .or_else(|error|{
+        .map_err(|error| {
             tracing::warn!("{}", error);
-            Err(Error::InternalError)
+            Error::Internal
         })?;
-    
+
     // unwrapping because this should never fail
-    let response = EncryptedMessage::new(&body, &cipher).unwrap();
+    let response = EncryptedMessage::new(&body, cipher).unwrap();
     Ok::<_, Error>(Bytes::from(response.into_bytes()))
 }

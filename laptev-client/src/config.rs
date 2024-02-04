@@ -1,5 +1,10 @@
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, io::{Read, Write}, net::IpAddr, str::FromStr};
+use std::{
+    collections::HashMap,
+    io::{Read, Write},
+    net::IpAddr,
+    str::FromStr,
+};
 
 #[derive(Serialize, Deserialize, Default, Clone)]
 pub struct Config {
@@ -28,7 +33,7 @@ impl Config {
     }
 
     fn save(&self) -> anyhow::Result<()> {
-        let _ = std::fs::OpenOptions::new()
+        std::fs::OpenOptions::new()
             .create(true)
             .write(true)
             .truncate(true)

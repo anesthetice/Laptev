@@ -10,7 +10,7 @@ pub type Result<T> = core::result::Result<T, Error>;
 pub enum Error {
     HandshakeFailed,
     NotAuthenticated,
-    InternalError
+    Internal,
 }
 
 impl fmt::Display for Error {
@@ -25,12 +25,8 @@ impl std::error::Error for Error {
             Self::HandshakeFailed => {
                 "could not establish a secure and trusted connection with the client"
             }
-            Self::NotAuthenticated => {
-                "not an authenticated client"
-            }
-            Self::InternalError => {
-                "internal server error"
-            }
+            Self::NotAuthenticated => "not an authenticated client",
+            Self::Internal => "internal server error",
         }
     }
 }
@@ -40,7 +36,7 @@ impl IntoResponse for Error {
         match self {
             Self::HandshakeFailed => StatusCode::FORBIDDEN.into_response(),
             Self::NotAuthenticated => StatusCode::FORBIDDEN.into_response(),
-            Self::InternalError => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+            Self::Internal => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
         }
     }
 }

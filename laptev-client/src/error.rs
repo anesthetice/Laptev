@@ -30,9 +30,7 @@ impl std::error::Error for Error {
             Self::HandshakeFailed(reason) => {
                 use HandshakeFailedReason as HFR;
                 match reason {
-                    HFR::ServerNotResponding => {
-                        "could not connect to server"
-                    },
+                    HFR::ServerNotResponding => "could not connect to server",
                     HFR::UknownServer => {
                         "could not retrieve the password to the server from configuration"
                     }
@@ -43,7 +41,7 @@ impl std::error::Error for Error {
                         "could not authenticate, password probably incorrect"
                     }
                 }
-            },
+            }
             Self::InvalidSocketAddr => "not a valid socket addr",
             Self::ServerNotResponding => "could not connect to server",
         }

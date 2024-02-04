@@ -37,7 +37,7 @@ impl Config {
             serde_json::to_string_pretty(&self.expiration)?
         );
 
-        let _ = tokio::fs::OpenOptions::new()
+        tokio::fs::OpenOptions::new()
             .create(true)
             .write(true)
             .truncate(true)

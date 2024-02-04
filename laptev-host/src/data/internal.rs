@@ -38,13 +38,7 @@ impl Debug for AppState {
         let client_data = self
             .db
             .iter()
-            .map(|(addr, data)| {
-                format!(
-                    "address = {}\ntimestamp = {}\n",
-                    addr.to_string(),
-                    data.timestamp
-                )
-            })
+            .map(|(addr, data)| format!("address = {}\ntimestamp = {}\n", addr, data.timestamp))
             .collect::<Vec<String>>()
             .join("\n");
         write!(f, "[Config]\n{:?}\n[Clients]\n{}", self.config, client_data)
