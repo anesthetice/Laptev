@@ -1,8 +1,7 @@
+*/*.config
+*/*.log
 */target
 */Cargo.lock
-*/*/configuration.rs
 /archives
-laptev-host/data
-laptev-host/laptev-host.log
-laptev-client/downloads
-laptev-client/default_address.config
+*/data
+*/downloads
