@@ -1,6 +1,7 @@
 use rand::{rngs::StdRng, RngCore, SeedableRng};
 use std::time::{Duration, SystemTime};
 
+#[allow(dead_code)]
 pub fn get_timestamp() -> u64 {
     SystemTime::now()
         .duration_since(SystemTime::UNIX_EPOCH)

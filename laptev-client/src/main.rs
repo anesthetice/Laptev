@@ -416,7 +416,7 @@ impl iced::Application for Laptev {
                 .align_items(alignment::Alignment::Center),
                 horizontal_rule(1),
                 scrollable(
-                    container(self.entries.to_widget())
+                    container(self.entries.to_widget(self.config.local_offset))
                         .width(iced::Length::Fill)
                         .center_x()
                 )

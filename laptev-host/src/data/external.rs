@@ -15,7 +15,7 @@ impl EncryptedMessage {
         let mut nonce: [u8; 12] = [0; 12];
         rng_fill_bytes(&mut nonce);
         Ok(Self {
-            nonce: nonce,
+            nonce,
             data: cipher.encrypt(&nonce.into(), unencrypted_data)?,
         })
     }

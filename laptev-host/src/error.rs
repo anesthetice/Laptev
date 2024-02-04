@@ -4,6 +4,7 @@ use axum::{
 };
 use core::fmt;
 
+#[allow(dead_code)]
 pub type Result<T> = core::result::Result<T, Error>;
 
 #[derive(Debug)]

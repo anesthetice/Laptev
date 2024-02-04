@@ -58,7 +58,7 @@ async fn synchronize(
     }?;
 
     // prepares the response
-    let mut body: Vec<(u64, Vec<u8>)> = Vec::new();
+    let mut entries: Vec<(u64, PathBuf)> = Vec::new();
 
     if let Ok(mut read_dir) = tokio::fs::read_dir("./data").await {
         while let Ok(Some(entry)) = read_dir.next_entry().await {
@@ -81,24 +81,33 @@ async fn synchronize(
             }
 
             if let Ok(timestamp) = entry.file_stem().unwrap().to_str().unwrap().parse::<u64>() {
-                if let Ok(mut file) = tokio::fs::OpenOptions::new()
-                    .create(false)
-                    .read(true)
-                    .open(entry)
-                    .await
-                {
-                    let mut data: Vec<u8> = Vec::new();
-                    if file.read_to_end(&mut data).await.is_ok() {
-                        body.push((timestamp, data))
-                    }
-                }
+                entries.push((timestamp, entry))
             }
         }
     }
+    entries.sort_by(|(a, _), (b, _)| b.cmp(a));
+    // only keeps the first 25 entries, TODO let the client decide this
+    if entries.len() > 25 {
+        entries.drain(25..entries.len());
+    }
 
+    let mut body: Vec<(u64, Vec<u8>)> = Vec::new();
+
+    for (timestamp, filepath) in entries.into_iter() {
+        if let Ok(mut file) = tokio::fs::OpenOptions::new()
+            .create(false)
+            .read(true)
+            .open(filepath)
+            .await
+        {
+            let mut data: Vec<u8> = Vec::new();
+            if file.read_to_end(&mut data).await.is_ok() {
+                body.push((timestamp, data))
+            }
+        }
+    }
     // unwrapping because this should never fail
     let response = EncryptedMessage::new(&bincode::serialize(&body).unwrap(), cipher).unwrap();
-
     Ok::<_, Error>(Bytes::from(response.into_bytes()))
 }
 

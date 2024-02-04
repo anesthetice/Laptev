@@ -5,6 +5,7 @@ use iced::{
     Element,
 };
 use std::sync::Arc;
+use time::UtcOffset;
 
 #[derive(Clone)]
 pub struct SharedCipher(Arc<Aes256GcmSiv>);
@@ -28,7 +29,7 @@ impl core::fmt::Debug for SharedCipher {
     }
 }
 
-#[derive(Clone)]
+#[derive(Default, Clone)]
 pub struct Entries(pub Vec<Entry>);
 
 impl std::fmt::Debug for Entries {
@@ -62,16 +63,7 @@ impl FromIterator<Entry> for Entries {
 
 impl From<Vec<(u64, Vec<u8>)>> for Entries {
     fn from(value: Vec<(u64, Vec<u8>)>) -> Self {
-        value
-            .into_iter()
-            .map(|val| Entry::from(val))
-            .collect::<Self>()
-    }
-}
-
-impl Default for Entries {
-    fn default() -> Self {
-        Self(Vec::new())
+        value.into_iter().map(Entry::from).collect::<Self>()
     }
 }
 
@@ -79,10 +71,10 @@ impl Entries {
     pub fn clear(&mut self) {
         self.0.drain(..);
     }
-    pub fn to_widget(&self) -> Element<crate::Message> {
+    pub fn to_widget(&self, local_offset: UtcOffset) -> Element<crate::Message> {
         let mut column: iced::widget::Column<crate::Message> = iced::widget::Column::new();
         for entry in self.iter() {
-            column = column.push(entry.to_widget());
+            column = column.push(entry.to_widget(local_offset));
         }
         column.into()
     }
@@ -104,16 +96,29 @@ impl From<(u64, Vec<u8>)> for Entry {
 }
 
 impl Entry {
-    fn to_widget(&self) -> Element<crate::Message> {
+    fn to_widget(&self, local_offset: time::UtcOffset) -> Element<crate::Message> {
         row![
             iced::widget::image(iced::widget::image::Handle::from_memory(
                 self.thumbnail.clone()
             ))
             .width(640)
             .height(360),
-            text(self.timestamp)
-                .vertical_alignment(alignment::Vertical::Center)
-                .horizontal_alignment(alignment::Horizontal::Center),
+            if let Ok(time) = time::OffsetDateTime::from_unix_timestamp(self.timestamp as i64) {
+                let t = time.to_offset(local_offset);
+                text(format!(
+                    "{:0>2}/{:0>2}/{} - {:0>2}:{:0>2}:{:0>2}",
+                    t.day(),
+                    t.month() as u8,
+                    t.year(),
+                    t.hour(),
+                    t.minute(),
+                    t.second()
+                ))
+            } else {
+                text(self.timestamp)
+            }
+            .vertical_alignment(alignment::Vertical::Center)
+            .horizontal_alignment(alignment::Horizontal::Center),
             button(text("download"))
                 .on_press(crate::Message::Download(self.timestamp))
                 .padding(10)

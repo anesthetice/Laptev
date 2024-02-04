@@ -10,7 +10,7 @@ author = "anesthetice"
 reqwest             =   {version = "0.11.23"}
 iced                =   {version = "0.10.*", features = ["advanced", "image"]}
 iced_futures        =   {version = "0.7.*", features = ["tokio"]}
-time                =   {version = "0.3.20", features = ["local-offset"]}
+time                =   {version = "0.3.20", features = ["serde"]}
 tokio               =   {version = "1.27.*", features = ["full"]}
 
 # cryptography

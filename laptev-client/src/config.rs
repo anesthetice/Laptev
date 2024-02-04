@@ -5,10 +5,23 @@ use std::{
     net::IpAddr,
     str::FromStr,
 };
+use time::UtcOffset;
 
-#[derive(Serialize, Deserialize, Default, Clone)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct Config {
+    pub local_offset: UtcOffset,
     pub entries: HashMap<IpAddr, Vec<u8>>,
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        let mut entries = HashMap::new();
+        entries.insert(IpAddr::from_str("127.0.0.1").unwrap(), vec![0]);
+        Self {
+            local_offset: UtcOffset::from_whole_seconds(0).unwrap(),
+            entries,
+        }
+    }
 }
 
 impl Config {
