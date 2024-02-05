@@ -9,7 +9,15 @@ use time::UtcOffset;
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct Config {
+    // the default address that will be displayed on launch
+    pub default_address: String,
+    // the maximum amount of entries displayed when synced with the host
+    pub size: usize,
+    // how many entries the host should skip when syncing
+    pub skip: usize,
+    // your local time offset, will default to UTC (meaning 0)
     pub local_offset: UtcOffset,
+    // hosts and their associated passwords
     pub entries: HashMap<IpAddr, Vec<u8>>,
 }
 
@@ -18,6 +26,9 @@ impl Default for Config {
         let mut entries = HashMap::new();
         entries.insert(IpAddr::from_str("127.0.0.1").unwrap(), vec![0]);
         Self {
+            default_address: String::from("127.0.0.1:12675"),
+            size: 25,
+            skip: 0,
             local_offset: UtcOffset::from_whole_seconds(0).unwrap(),
             entries,
         }

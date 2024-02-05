@@ -4,13 +4,13 @@ use crate::{
 };
 use axum::{
     body::Bytes,
-    extract::{ConnectInfo, Path, State},
+    extract::{ConnectInfo, Path, State, Query},
     http::StatusCode,
     response::IntoResponse,
     routing::{delete as del, get},
     Router,
 };
-use std::{net::SocketAddr, path::PathBuf};
+use std::{collections::HashMap, net::SocketAddr, path::PathBuf};
 use tokio::io::AsyncReadExt;
 use tower_http::trace::{self, TraceLayer};
 use tracing::Level;
@@ -43,6 +43,7 @@ pub fn routes_handler(state: SharedState) -> Router {
 async fn synchronize(
     State(state): State<SharedState>,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    Query(parameters): Query<HashMap<String, usize>>
 ) -> impl IntoResponse {
     // checks that the client is authenticated and gets their cipher
     let read_state = state.read().await;
@@ -86,9 +87,25 @@ async fn synchronize(
         }
     }
     entries.sort_by(|(a, _), (b, _)| b.cmp(a));
-    // only keeps the first 25 entries, TODO let the client decide this
-    if entries.len() > 25 {
-        entries.drain(25..entries.len());
+
+    // the amount of entries to skip, if any
+    let skip = match parameters.get("skip") {
+        Some(s) => *s,
+        None => 0,
+    };
+    if skip > entries.len() {
+        entries.drain(..);
+    } else {
+        entries.drain(0..skip);
+    }
+
+    // the maximum amount of entries to send back to the client
+    let size = match parameters.get("size") {
+        Some(s) => *s,
+        None => 25,
+    };
+    if entries.len() > size {
+        entries.drain(size..entries.len());
     }
 
     let mut body: Vec<(u64, Vec<u8>)> = Vec::new();

@@ -1,6 +1,7 @@
 use aes_gcm_siv::{Aes256GcmSiv, KeyInit};
 use rand::{rngs::StdRng, SeedableRng};
 use reqwest::{Method, StatusCode, Url};
+use utils::invisible_rule;
 use std::{fmt::Debug, net::SocketAddr, str::FromStr};
 use tokio::io::AsyncWriteExt;
 use x25519_dalek::{EphemeralSecret, PublicKey};
@@ -11,7 +12,7 @@ use iced::{
     widget::{
         button, column, container, horizontal_rule, image, row, scrollable, text, text_input,
     },
-    Application, Command, Theme,
+    Application, Command, Theme, Size
 };
 
 mod config;
@@ -154,8 +155,8 @@ impl Laptev {
             Err(Error::HandshakeFailed(HFR::AuthenticationFailed))
         }
     }
-    async fn sync(socket_address: SocketAddr, cipher: SharedCipher) -> error::Result<Entries> {
-        let url: String = format!("http://{}/synchronize", socket_address);
+    async fn sync(socket_address: SocketAddr, cipher: SharedCipher, config: Config) -> error::Result<Entries> {
+        let url: String = format!("http://{}/synchronize?size={}&skip={}", socket_address, config.size, config.skip);
         let response = reqwest::get(Url::from_str(&url).unwrap())
             .await
             .map_err(|error| {
@@ -246,10 +247,12 @@ impl Laptev {
 
 impl Default for Laptev {
     fn default() -> Self {
+        let config = Config::new();
+        let default_address = config.default_address.clone();
         Self {
-            config: Config::new(),
+            config,
             mode: Mode::Initial,
-            socket_address: String::from(":12675"),
+            socket_address: default_address,
             cipher: None,
             entries: Entries::default(),
         }
@@ -267,7 +270,7 @@ impl iced::Application for Laptev {
     }
 
     fn title(&self) -> String {
-        "Laptev Client 2.0.0".to_string()
+        "Laptev Client 2.0.1".to_string()
     }
 
     fn theme(&self) -> Self::Theme {
@@ -294,8 +297,7 @@ impl iced::Application for Laptev {
                         self.mode = Mode::Syncing;
                         let config = self.config.clone();
                         Command::batch([
-                            // WARNING DISABLED DUE TO HYPRLAND ISSUES RE-ENABLE LATER
-                            //iced::window::resize(Size::new(300, 400)),
+                            iced::window::resize(Size::new(300, 400)),
                             Command::perform(
                                 async move { Self::authenticate(socket_address, config).await },
                                 Message::SyncAttempt,
@@ -312,9 +314,10 @@ impl iced::Application for Laptev {
                 Ok(shared_cipher) => {
                     self.cipher = Some(shared_cipher.clone());
                     let socket_address = self.get_socket_address().unwrap();
+                    let config = self.config.clone();
 
                     Command::perform(
-                        async move { Self::sync(socket_address, shared_cipher).await },
+                        async move { Self::sync(socket_address, shared_cipher, config).await },
                         Message::SyncOutput,
                     )
                 }
@@ -329,28 +332,29 @@ impl iced::Application for Laptev {
                     Ok(entries) => {
                         self.entries.extend(entries.0);
                         self.mode = Mode::Synced;
+                        Command::from(iced::window::resize(Size::new(1280, 720)))
                     }
                     Err(error) => {
                         tracing::warn!("{}", error);
                         self.clear();
-                        self.mode = Mode::Initial;
+                        Command::none()
                     }
                 }
-                Command::none()
             }
             Message::SyncRefresh => {
                 self.entries.clear();
                 self.mode = Mode::Syncing;
                 let socket_address = self.get_socket_address().unwrap();
                 let shared_cipher = self.cipher.as_ref().unwrap().clone();
-                Command::perform(
-                    async move { Self::sync(socket_address, shared_cipher).await },
-                    Message::SyncOutput,
-                )
+                let config = self.config.clone();
+                Command::batch([
+                    iced::window::resize(Size::new(300, 400)),
+                    Command::perform(async move { Self::sync(socket_address, shared_cipher, config).await },Message::SyncOutput),
+                ])
             }
             Message::Return => {
                 self.clear();
-                Command::none()
+                Command::from(iced::window::resize(Size::new(300, 400)))
             }
             Message::Download(id) => {
                 let socket_address = self.get_socket_address().unwrap();
@@ -386,7 +390,7 @@ impl iced::Application for Laptev {
             .into(),
             Mode::Syncing => column![
                 image("./res/icon-clear.png").width(175).height(175),
-                text("connecting")
+                text("loading")
                     .horizontal_alignment(alignment::Horizontal::Center)
                     .vertical_alignment(alignment::Vertical::Center),
                 text("...")
@@ -396,6 +400,7 @@ impl iced::Application for Laptev {
                     .on_press(Message::Return)
                     .padding(10)
                     .style(iced::theme::Button::Destructive),
+                invisible_rule(),
             ]
             .align_items(alignment::Alignment::Center)
             .padding(20)
