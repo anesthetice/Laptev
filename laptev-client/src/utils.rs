@@ -3,8 +3,8 @@ use std::time::{Duration, SystemTime};
 
 use iced::{
     color,
+    widget::{horizontal_rule, rule},
     Theme,
-    widget::{horizontal_rule, rule}
 };
 
 #[allow(dead_code)]
@@ -24,8 +24,9 @@ pub fn rng_fill_bytes(bytes: &mut [u8]) {
 }
 
 pub fn invisible_rule() -> iced::widget::Rule {
-    horizontal_rule(1)
-        .style(iced::theme::Rule::Custom(Box::new(InvisibleHorizontalRuleCustomStyle)))
+    horizontal_rule(1).style(iced::theme::Rule::Custom(Box::new(
+        InvisibleHorizontalRuleCustomStyle,
+    )))
 }
 
 struct InvisibleHorizontalRuleCustomStyle;
@@ -33,7 +34,11 @@ struct InvisibleHorizontalRuleCustomStyle;
 impl rule::StyleSheet for InvisibleHorizontalRuleCustomStyle {
     type Style = Theme;
     fn appearance(&self, _style: &Self::Style) -> rule::Appearance {
-        rule::Appearance { color: color!(229, 241, 237), width: 1, radius: 0.0.into(), fill_mode: rule::FillMode::Full }
+        rule::Appearance {
+            color: color!(229, 241, 237),
+            width: 1,
+            radius: 0.0.into(),
+            fill_mode: rule::FillMode::Full,
+        }
     }
 }
-

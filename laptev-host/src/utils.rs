@@ -39,7 +39,7 @@ pub async fn clean_older_than(seconds: u64) {
                 }
                 match tokio::fs::remove_file(entry).await {
                     Ok(()) => tracing::info!("removed a file older than {}", seconds),
-                    Err(error) => tracing::warn!("failed to remove an old file\n{}", error)
+                    Err(error) => tracing::warn!("failed to remove an old file\n{}", error),
                 }
             }
         }

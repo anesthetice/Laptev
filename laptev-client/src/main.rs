@@ -1,9 +1,9 @@
 use aes_gcm_siv::{Aes256GcmSiv, KeyInit};
 use rand::{rngs::StdRng, SeedableRng};
 use reqwest::{Method, StatusCode, Url};
-use utils::invisible_rule;
 use std::{fmt::Debug, net::SocketAddr, str::FromStr};
 use tokio::io::AsyncWriteExt;
+use utils::invisible_rule;
 use x25519_dalek::{EphemeralSecret, PublicKey};
 
 use iced::{
@@ -12,7 +12,7 @@ use iced::{
     widget::{
         button, column, container, horizontal_rule, image, row, scrollable, text, text_input,
     },
-    Application, Command, Theme, Size
+    Application, Command, Size, Theme,
 };
 
 mod config;
@@ -26,6 +26,9 @@ mod error;
 use error::Error;
 mod utils;
 
+const ICON_CLEAR: &'static [u8] = include_bytes!("../res/icon-clear.png");
+const ICON_CHILLY: &'static [u8] = include_bytes!("../res/icon-chilly.png");
+
 #[tokio::main]
 async fn main() -> iced::Result {
     tracing_subscriber::fmt()
@@ -38,7 +41,13 @@ async fn main() -> iced::Result {
             size: (300, 400),
             resizable: true,
             decorations: true,
-            icon: Some(iced::window::icon::from_file("./res/icon-chilly.png").unwrap()),
+            icon: Some(
+                iced::window::icon::from_file_data(
+                    ICON_CHILLY,
+                    Some(iced::advanced::graphics::image::image_rs::ImageFormat::Png),
+                )
+                .unwrap(),
+            ),
             ..Default::default()
         },
         ..Default::default()
@@ -155,8 +164,15 @@ impl Laptev {
             Err(Error::HandshakeFailed(HFR::AuthenticationFailed))
         }
     }
-    async fn sync(socket_address: SocketAddr, cipher: SharedCipher, config: Config) -> error::Result<Entries> {
-        let url: String = format!("http://{}/synchronize?size={}&skip={}", socket_address, config.size, config.skip);
+    async fn sync(
+        socket_address: SocketAddr,
+        cipher: SharedCipher,
+        config: Config,
+    ) -> error::Result<Entries> {
+        let url: String = format!(
+            "http://{}/synchronize?size={}&skip={}",
+            socket_address, config.size, config.skip
+        );
         let response = reqwest::get(Url::from_str(&url).unwrap())
             .await
             .map_err(|error| {
@@ -270,7 +286,7 @@ impl iced::Application for Laptev {
     }
 
     fn title(&self) -> String {
-        "Laptev Client 2.0.2".to_string()
+        "Laptev Client 2.0.3".to_string()
     }
 
     fn theme(&self) -> Self::Theme {
@@ -327,20 +343,18 @@ impl iced::Application for Laptev {
                     Command::none()
                 }
             },
-            Message::SyncOutput(result) => {
-                match result {
-                    Ok(entries) => {
-                        self.entries.extend(entries.0);
-                        self.mode = Mode::Synced;
-                        Command::from(iced::window::resize(Size::new(1280, 720)))
-                    }
-                    Err(error) => {
-                        tracing::warn!("{}", error);
-                        self.clear();
-                        Command::none()
-                    }
+            Message::SyncOutput(result) => match result {
+                Ok(entries) => {
+                    self.entries.extend(entries.0);
+                    self.mode = Mode::Synced;
+                    iced::window::resize(Size::new(1280, 720))
                 }
-            }
+                Err(error) => {
+                    tracing::warn!("{}", error);
+                    self.clear();
+                    Command::none()
+                }
+            },
             Message::SyncRefresh => {
                 self.entries.clear();
                 self.mode = Mode::Syncing;
@@ -349,12 +363,15 @@ impl iced::Application for Laptev {
                 let config = self.config.clone();
                 Command::batch([
                     iced::window::resize(Size::new(300, 400)),
-                    Command::perform(async move { Self::sync(socket_address, shared_cipher, config).await },Message::SyncOutput),
+                    Command::perform(
+                        async move { Self::sync(socket_address, shared_cipher, config).await },
+                        Message::SyncOutput,
+                    ),
                 ])
             }
             Message::Return => {
                 self.clear();
-                Command::from(iced::window::resize(Size::new(300, 400)))
+                iced::window::resize(Size::new(300, 400))
             }
             Message::Download(id) => {
                 let socket_address = self.get_socket_address().unwrap();
@@ -374,7 +391,9 @@ impl iced::Application for Laptev {
     fn view(&self) -> iced::Element<'_, Self::Message, iced::Renderer<Self::Theme>> {
         match self.mode {
             Mode::Initial => column![
-                image("./res/icon-clear.png").width(175).height(175),
+                image(image::Handle::from_memory(ICON_CLEAR))
+                    .width(175)
+                    .height(175),
                 text_input("address:port", self.socket_address.as_str())
                     .on_input(Message::SocketAddrInputUpdate)
                     .on_submit(Message::SyncEvent)
@@ -389,7 +408,9 @@ impl iced::Application for Laptev {
             .spacing(10)
             .into(),
             Mode::Syncing => column![
-                image("./res/icon-clear.png").width(175).height(175),
+                image(image::Handle::from_memory(ICON_CLEAR))
+                    .width(175)
+                    .height(175),
                 text("loading")
                     .horizontal_alignment(alignment::Horizontal::Center)
                     .vertical_alignment(alignment::Vertical::Center),
@@ -411,7 +432,9 @@ impl iced::Application for Laptev {
                     button(text("synchronize").horizontal_alignment(alignment::Horizontal::Center))
                         .on_press(Message::SyncRefresh)
                         .padding(5),
-                    image("./res/icon-clear.png").width(75).height(75),
+                    image(image::Handle::from_memory(ICON_CLEAR))
+                        .width(75)
+                        .height(75),
                     button(text("disconnect").horizontal_alignment(alignment::Horizontal::Center))
                         .on_press(Message::Return)
                         .padding(5),

@@ -4,7 +4,7 @@ use crate::{
 };
 use axum::{
     body::Bytes,
-    extract::{ConnectInfo, Path, State, Query},
+    extract::{ConnectInfo, Path, Query, State},
     http::StatusCode,
     response::IntoResponse,
     routing::{delete as del, get},
@@ -43,7 +43,7 @@ pub fn routes_handler(state: SharedState) -> Router {
 async fn synchronize(
     State(state): State<SharedState>,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
-    Query(parameters): Query<HashMap<String, usize>>
+    Query(parameters): Query<HashMap<String, usize>>,
 ) -> impl IntoResponse {
     // checks that the client is authenticated and gets their cipher
     let read_state = state.read().await;
