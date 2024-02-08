@@ -24,7 +24,7 @@ impl AppState {
         let current_time = get_timestamp();
 
         self.db
-            .retain(|_, value| value.timestamp + self.config.expiration > current_time)
+            .retain(|_, value| value.timestamp + self.config.client_expiration_time > current_time)
     }
 
     pub fn add_client(&mut self, addr: IpAddr, key: &[u8; 32]) {

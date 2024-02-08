@@ -1,6 +1,6 @@
 [package]
 name = "laptev-host"
-version = "2.0.1"
+version = "2.0.2"
 edition = "2021"
 author = "anesthetice"
 
@@ -26,6 +26,3 @@ tracing-subscriber  =   {version = "0.3.*"}
 
 [profile.release]
 opt-level = 3
-
-#[target.armv7-unknown-linux-gnueabihf]
-#linker = "arm-none-linux-gnueabihf-gcc"

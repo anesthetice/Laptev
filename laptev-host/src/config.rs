@@ -3,11 +3,12 @@ use serde::{Deserialize, Serialize};
 use std::fmt::Debug;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct Config {
     pub port: u16,
     pub password: Vec<u8>,
-    pub expiration: u64,
+    pub client_expiration_time: u64,
+    pub file_expiration_time: u64,
 }
 
 impl Config {
@@ -31,10 +32,11 @@ impl Config {
 
     async fn save(&self) -> anyhow::Result<()> {
         let serialized_data: String = format!(
-            "{{\n  \"port\": {},\n  \"password\": {},\n  \"expiration\": {}\n}}",
+            "{{\n  \"port\": {},\n  \"password\": {},\n  \"client_expiration_time\": {},\n  \"file_expiration_time\": {}\n}}",
             serde_json::to_string_pretty(&self.port)?,
             serde_json::to_string(&self.password)?,
-            serde_json::to_string_pretty(&self.expiration)?
+            serde_json::to_string_pretty(&self.client_expiration_time)?,
+            serde_json::to_string_pretty(&self.file_expiration_time)?,
         );
 
         tokio::fs::OpenOptions::new()
@@ -67,7 +69,8 @@ impl Config {
         Self {
             port: 12675,
             password,
-            expiration: 1800,
+            client_expiration_time: 1800,
+            file_expiration_time: 259200,
         }
     }
 }
