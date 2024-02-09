@@ -24,7 +24,7 @@ pub struct Config {
 impl Default for Config {
     fn default() -> Self {
         let mut entries = HashMap::new();
-        entries.insert(IpAddr::from_str("127.0.0.1").unwrap(), vec![0]);
+        entries.insert(IpAddr::from_str("127.0.0.1").unwrap(), Vec::new());
         Self {
             default_address: String::from("127.0.0.1:12675"),
             size: 25,

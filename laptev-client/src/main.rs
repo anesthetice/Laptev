@@ -1,7 +1,7 @@
 use aes_gcm_siv::{Aes256GcmSiv, KeyInit};
 use rand::{rngs::StdRng, SeedableRng};
 use reqwest::{Method, StatusCode, Url};
-use std::{fmt::Debug, net::SocketAddr, str::FromStr};
+use std::{fmt::Debug, net::SocketAddr, path::PathBuf, str::FromStr};
 use tokio::io::AsyncWriteExt;
 use utils::invisible_rule;
 use x25519_dalek::{EphemeralSecret, PublicKey};
@@ -221,12 +221,25 @@ impl Laptev {
             tracing::warn!("{}", error);
             return;
         }
+        
+        let filepath: PathBuf = match PathBuf::from("./downloads").is_dir() {
+            true => PathBuf::from(format!("./downloads/{}.mp4", id)),
+            false => {
+                match tokio::fs::create_dir("./downloads").await {
+                    Ok(..) => PathBuf::from(format!("./downloads/{}.mp4", id)),
+                    Err(error) => {
+                        tracing::warn!("could not create ./downloads\n{}", error);
+                        PathBuf::from(format!("./{}.mp4", id))
+                    },
+                }
+            }
+        };
 
         let file = tokio::fs::OpenOptions::new()
             .create(true)
             .write(true)
             .truncate(true)
-            .open(format!("./downloads/{}.h264", id))
+            .open(filepath)
             .await;
         if let Err(error) = file {
             tracing::warn!("{}", error);
@@ -286,7 +299,7 @@ impl iced::Application for Laptev {
     }
 
     fn title(&self) -> String {
-        "Laptev Client 2.0.3".to_string()
+        "Laptev Client 2.0.4".to_string()
     }
 
     fn theme(&self) -> Self::Theme {

@@ -1,17 +1,23 @@
 #!/usr/bin/python3
-# I did not shamelessly steal this code from https://github.com/raspberrypi/picamera2/blob/af75efd3b76479a2f6401dda120a67f3ee417eea/examples/capture_motion.py
-# and adapt it to my needs as I am a good programmer
 
 from libcamera import controls
 from numpy import square, subtract
 from picamera2 import Picamera2
-from picamera2.encoders import H264Encoder
-from picamera2.outputs import FileOutput
+from picamera2.encoders import H264Encoder, Quality
+from picamera2.outputs import FfmpegOutput
 from PIL import Image
-from time import time
+from time import time, sleep
 
-lsize = (400, 300)
+lq_size = (576, 324)
+hq_size = (1536, 864)
 picam2 = Picamera2()
+
+video_config = picam2.create_video_configuration(
+    main={"size": hq_size, "format": "RGB888"},
+    lores={"size": lq_size, "format": "YUV420"},
+    controls={"FrameRate": 60.0}
+)
+picam2.configure(video_config)
 
 # AEC algorithm settings
 picam2.set_controls({"AeConstraintMode": controls.AeConstraintModeEnum.Normal})
@@ -23,32 +29,46 @@ picam2.set_controls({"AfRange": controls.AfRangeEnum.Normal})
 picam2.set_controls({"AfSpeed": controls.AfSpeedEnum.Fast})
 
 # Other settings
-picam2.set_controls({"NoiseReductionMode": controls.draft.NoiseReductionModeEnum.HighQuality})
 picam2.set_controls({"AwbEnable": True})
 picam2.set_controls({"AwbMode": controls.AwbModeEnum.Indoor})
 picam2.set_controls({"Brightness": 0.20}) # max : 1.0
-picam2.set_controls({"Contrast": 1.5}) # max : 32.0
-picam2.set_controls({"Sharpness": 2.5}) # max : 16.0
+picam2.set_controls({"Contrast": 1.0}) # max : 32.0
+picam2.set_controls({"Sharpness": 1.0}) # max : 16.0
 
-# H264 seemingly doesn't work with 2304x1296, so I'll be using the standard 1080p 16:9 format
-video_config = picam2.create_video_configuration(
-    main={"size": (1920, 1080), "format": "RGB888"},
-    lores={"size": lsize, "format": "YUV420"}
-)
-picam2.configure(video_config)
-
-# decent quality 1080p H264 bitrate (2**27)
-encoder = H264Encoder(134217728)
+encoder = H264Encoder()
 picam2.encoder = encoder
 picam2.start()
 
-w, h = lsize
+def get_mse_threshold(samples=100):
+    w, h = lq_size
+    prev = None
+    sum = 0
+    for _ in range (0, samples):
+        cur = picam2.capture_buffer("lores")
+        cur = cur[:w * h].reshape(h, w)
+        if prev is not None:
+            # Measure pixels differences between current and
+            # previous frame
+            mse = square(subtract(cur, prev)).mean()
+            sum += mse
+        prev = cur
+    sum = sum/samples + 4
+    print(f"new threshold: {sum}")
+    return sum
+
+threshold = get_mse_threshold()
+threshold_update_guard = 0
+w, h = lq_size
 prev = None
 encoding = False
 ltime = 0
+itime = 0
+cur_time = 0
 
 motion_count = 0
 motion_elapsed_counter = 0
+lazy_counter = 0
+
 
 while True:
     cur = picam2.capture_buffer("lores")
@@ -56,32 +76,47 @@ while True:
     if prev is not None:
         # Measure pixels differences between current and
         # previous frame
+        cur_time = time()
         mse = square(subtract(cur, prev)).mean()
-        if mse > 6.25:
+        if threshold_update_guard > 100:
+            print("threshold guard reached")
+            threshold = get_mse_threshold()
+            threshold_update_guard = 0
+
+        if mse > threshold:
             motion_count += 1
             motion_elapsed_counter = 0
 
             if motion_count >= 3:
                 if not encoding:
-                    timestamp = int(time())
-                    print(f"[{timestamp}] motion detected")
+                    print("motion detected, started encoding")
+                    itime = cur_time
+                    timestamp = int(itime)
 
-                    thumbnail = Image.fromarray(picam2.capture_array("main"))
-                    thumbnail.thumbnail((640, 360))
+                    thumbnail = Image.fromarray(picam2.capture_array("main"), "RGB")
+                    thumbnail.thumbnail((512, 288))
                     thumbnail.save(f"data/{timestamp}.jpg")
 
-                    encoder.output = FileOutput(f"data/{timestamp}.h264")
-                    picam2.start_encoder(picam2.encoder, encoder.output)
+                    encoder.output = FfmpegOutput(f"data/{timestamp}.mp4")
+                    picam2.start_encoder(encoder=picam2.encoder, output=encoder.output, quality=Quality.LOW)
                     encoding = True
-
-                ltime = time()
+                    motion_count = 0
+                    threshold_update_guard += 2
+                ltime = cur_time
+            if cur_time - itime > 10.0:
+                if encoding: 
+                    threshold_update_guard += 20
+                    print("10 seconds reached, stopped encoding")
+                    picam2.stop_encoder()
+                    encoding = False
+                    motion_count = 0
+                
         else:
-            if encoding and time() - ltime > 1.5:
+            timediff = cur_time - ltime
+            if encoding and timediff > 2.25:
+                print(f"stopped encoding, {timediff}")
                 picam2.stop_encoder()
                 encoding = False
                 motion_count = 0
-        if motion_count > 0:
-            motion_elapsed_counter += 1
-        if motion_elapsed_counter > 50:
-            motion_count = 0
     prev = cur
+

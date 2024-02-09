@@ -101,8 +101,8 @@ impl Entry {
             iced::widget::image(iced::widget::image::Handle::from_memory(
                 self.thumbnail.clone()
             ))
-            .width(640)
-            .height(360),
+            .width(512)
+            .height(288),
             if let Ok(time) = time::OffsetDateTime::from_unix_timestamp(self.timestamp as i64) {
                 let t = time.to_offset(local_offset);
                 text(format!(

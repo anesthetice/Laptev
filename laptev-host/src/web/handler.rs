@@ -148,7 +148,7 @@ async fn delete(
     // attempts to delete the request
     let filepaths = [
         PathBuf::from(format!("./data/{}.jpg", id)),
-        PathBuf::from(format!("./data/{}.h264", id)),
+        PathBuf::from(format!("./data/{}.mp4", id)),
     ];
     if tokio::fs::remove_file(&filepaths[0]).await.is_ok()
         && tokio::fs::remove_file(&filepaths[1]).await.is_ok()
@@ -182,7 +182,7 @@ async fn download(
     tokio::fs::OpenOptions::new()
         .create(false)
         .read(true)
-        .open(format!("./data/{}.h264", id))
+        .open(format!("./data/{}.mp4", id))
         .await
         .map_err(|error| {
             tracing::warn!("{}", error);

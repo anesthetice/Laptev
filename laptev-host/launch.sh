@@ -14,8 +14,8 @@
 laptev="/home/$USER/Laptev"
 cd $laptev
 
-nohup python "$laptev/motioncapture.py" > "$laptev/motioncapture.log" &
-nohup "$laptev/laptev-host" > "$laptev/laptev-host.log" &
+nohup python "$laptev/motioncapture.py" > "$laptev/motioncapture.log" 2>&1 &
+nohup "$laptev/laptev-host" > "$laptev/laptev-host.log" 2>&1 &
 
 sleep 86400
 reboot
