@@ -11,7 +11,7 @@
 #    fi
 #fi
 
-sleep(5)
+sleep 5
 
 laptev="/home/$USER/Laptev"
 cd $laptev
