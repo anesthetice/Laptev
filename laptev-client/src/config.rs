@@ -44,10 +44,7 @@ impl Config {
             }
             Err(error) => {
                 tracing::warn!("failed to load configuration\n{}", error);
-                let mut config = Self::default();
-                config
-                    .entries
-                    .insert(IpAddr::from_str("127.0.0.1").unwrap(), vec![0]);
+                let config = Self::default();
                 if let Err(error) = config.save() {
                     tracing::warn!("failed to save generated config\n{}", error);
                 }
