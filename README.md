@@ -32,11 +32,16 @@ A collection of scripts and applications meant to capture, process, and view vid
 ### usage
 
 When launching laptev-host for the first time, a configuration file will be automatically generated, it will look something like this:
+
 file: laptev.config
+```
+{
   "port": 12675,
   "password": [1,213,114,168,67,6,14,135,...,90],
   "client_expiration_time": 1800,
   "file_expiration_time": 259200
+}
+```
 
 let's break each element down:
 1. port: the port (u16) where the server will listen on, 12675 is the default
@@ -45,7 +50,10 @@ let's break each element down:
 4. file_expiration_time: for how long are .mp4 and .jpg files inside $HOME/Laptev/data are kept
 
 Same thing for laptev-client, a configuration file will also be created on launch:
+
 file: laptev.config
+```
+{
   "default_address": "127.0.0.1:12675",
   "size": 25,
   "skip": 0,
@@ -57,6 +65,8 @@ file: laptev.config
   "entries": {
     "127.0.0.1": []
   }
+ }
+```
 
 Let's break each element down as well:
 1. default_address : the default address shown when launching the client
