@@ -299,7 +299,7 @@ impl iced::Application for Laptev {
     }
 
     fn title(&self) -> String {
-        "Laptev Client 2.0.4".to_string()
+        "Laptev Client 2.1.0".to_string()
     }
 
     fn theme(&self) -> Self::Theme {

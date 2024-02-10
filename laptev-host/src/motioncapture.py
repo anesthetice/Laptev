@@ -1,5 +1,8 @@
 #!/usr/bin/python3
 
+# this script is a very heavily modified version of one called capture_motion.py
+# https://github.com/raspberrypi/picamera2/blob/af75efd3b76479a2f6401dda120a67f3ee417eea/examples/capture_motion.py
+
 from libcamera import controls
 from numpy import square, subtract
 from picamera2 import Picamera2
@@ -32,8 +35,8 @@ picam2.set_controls({"AfSpeed": controls.AfSpeedEnum.Fast})
 picam2.set_controls({"AwbEnable": True})
 picam2.set_controls({"AwbMode": controls.AwbModeEnum.Indoor})
 picam2.set_controls({"Brightness": 0.20}) # max : 1.0
-picam2.set_controls({"Contrast": 1.0}) # max : 32.0
-picam2.set_controls({"Sharpness": 1.0}) # max : 16.0
+picam2.set_controls({"Contrast": 1.1}) # max : 32.0
+picam2.set_controls({"Sharpness": 1.1}) # max : 16.0
 
 encoder = H264Encoder()
 picam2.encoder = encoder
@@ -69,7 +72,6 @@ motion_count = 0
 motion_elapsed_counter = 0
 lazy_counter = 0
 
-
 while True:
     cur = picam2.capture_buffer("lores")
     cur = cur[:w * h].reshape(h, w)
@@ -82,7 +84,6 @@ while True:
             print("threshold guard reached")
             threshold = get_mse_threshold()
             threshold_update_guard = 0
-
         if mse > threshold:
             motion_count += 1
             motion_elapsed_counter = 0
@@ -103,14 +104,13 @@ while True:
                     motion_count = 0
                     threshold_update_guard += 2
                 ltime = cur_time
-            if cur_time - itime > 10.0:
+            if cur_time - itime > 8.0:
                 if encoding: 
                     threshold_update_guard += 20
                     print("10 seconds reached, stopped encoding")
                     picam2.stop_encoder()
                     encoding = False
                     motion_count = 0
-                
         else:
             timediff = cur_time - ltime
             if encoding and timediff > 2.25:
